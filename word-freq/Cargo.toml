@@ -10,4 +10,4 @@ clap = { version = "3.1.6", features = ["derive"] }
 regex = "1.5.5"
 priority-queue = "1.2.1"
 rayon = "1.5.1"
-crossbeam = "0.8.1"
+crossbeam-channel = "0.5.4"

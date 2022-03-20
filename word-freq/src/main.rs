@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use crossbeam::channel::Sender;
+use crossbeam_channel::Sender;
 use priority_queue::PriorityQueue;
 use regex::Regex;
 use std::{
@@ -25,7 +25,7 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
     let counter = rayon::scope(|scope| {
-        let (sender, receiver) = crossbeam::channel::unbounded();
+        let (sender, receiver) = crossbeam_channel::unbounded();
         for path in args.paths {
             let sender = sender.clone();
             let pattern = &args.pattern;
