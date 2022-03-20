@@ -1,2 +1,6 @@
 [workspace]
-members = ["word-freq", "overloaded"]
+members = [
+    "word-freq",
+    "overloaded",
+    "bag",
+]

@@ -1,0 +1,8 @@
+[package]
+name = "bag"
+authors = ["jRimbault <jacques.rimbault@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+indexmap = "1.8.0"
