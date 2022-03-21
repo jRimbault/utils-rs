@@ -24,8 +24,10 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
     let counter = rayon::scope(|scope| {
         let (sender, receiver) = crossbeam_channel::unbounded();
+
         for path in args.paths {
             let sender = sender.clone();
             let pattern = &args.pattern;
@@ -35,14 +37,23 @@ fn main() -> Result<()> {
                 }
             });
         }
+
         drop(sender);
+
         let mut counter = PriorityQueue::new();
         for word in receiver {
-            let n = *counter.get_priority(&word).unwrap_or(&0_usize);
-            counter.push(word, n + 1);
+            let mut found = false;
+            counter.change_priority_by(&word, |n| {
+                found = true;
+                *n += 1;
+            });
+            if !found {
+                counter.push(word, 1_usize);
+            }
         }
         counter
     });
+
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
     for (word, n) in counter.into_sorted_iter().take(args.top) {
