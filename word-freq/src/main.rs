@@ -24,22 +24,19 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let counter = parallel_word_count(&args);
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
+    for (word, n) in counter.into_sorted_iter().take(args.top) {
+        writeln!(stdout, "{word:?} {n}")?;
+    }
+    Ok(())
+}
 
-    let counter = rayon::scope(|scope| {
+fn parallel_word_count(args: &Args) -> PriorityQueue<String, usize> {
+    rayon::scope(|scope| {
         let (sender, receiver) = crossbeam_channel::unbounded();
-
-        for path in args.paths {
-            let sender = sender.clone();
-            let pattern = &args.pattern;
-            scope.spawn(move |_| {
-                if let Err(error) = file_count(sender, &path, pattern, args.case_insensitive) {
-                    eprintln!("Error: {error:?}");
-                }
-            });
-        }
-
-        drop(sender);
-
+        start_file_collecting(scope, args, sender);
         let mut counter = PriorityQueue::new();
         for word in receiver {
             let mut found = false;
@@ -48,22 +45,30 @@ fn main() -> Result<()> {
                 *n += 1;
             });
             if !found {
-                counter.push(word, 1_usize);
+                counter.push(word, 1);
             }
         }
         counter
-    });
-
-    let stdout = io::stdout();
-    let mut stdout = stdout.lock();
-    for (word, n) in counter.into_sorted_iter().take(args.top) {
-        writeln!(stdout, "{word:?} {n}")?;
-    }
-
-    Ok(())
+    })
 }
 
-fn file_count(
+fn start_file_collecting<'scope>(
+    scope: &rayon::Scope<'scope>,
+    args: &'scope Args,
+    sender: Sender<String>,
+) {
+    for path in &args.paths {
+        let sender = sender.clone();
+        let pattern = &args.pattern;
+        scope.spawn(move |_| {
+            if let Err(error) = word_count_file(sender, &path, pattern, args.case_insensitive) {
+                eprintln!("Error: {error:?}");
+            }
+        });
+    }
+}
+
+fn word_count_file(
     sender: Sender<String>,
     path: &Path,
     pattern: &Regex,
