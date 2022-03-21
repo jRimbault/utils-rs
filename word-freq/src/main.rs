@@ -12,7 +12,7 @@ use std::{
 #[derive(Debug, Parser)]
 #[clap(author, version)]
 struct Args {
-    #[clap(parse(from_os_str))]
+    #[clap(required = true, parse(from_os_str))]
     paths: Vec<PathBuf>,
     #[clap(short, long, default_value_t = Regex::new(r#"\w+"#).unwrap())]
     pattern: Regex,
