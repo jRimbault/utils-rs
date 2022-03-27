@@ -1,7 +1,10 @@
+mod counter;
+
 use anyhow::{Context, Result};
 use clap::Parser;
+use counter::SortedCounter;
 use crossbeam_channel::Sender;
-use priority_queue::PriorityQueue;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex::Regex;
 use std::{
     fs::File,
@@ -20,11 +23,13 @@ struct Args {
     case_insensitive: bool,
     #[clap(long, default_value_t = usize::MAX)]
     top: usize,
+    #[clap(short = 'P', long, default_value_t = rayon::current_num_threads())]
+    parallelism: usize,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let counter = parallel_word_count(&args);
+    let SortedCounter(counter) = word_count_all(&args);
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
     for (word, n) in counter.into_sorted_iter().take(args.top) {
@@ -33,49 +38,27 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parallel_word_count(args: &Args) -> PriorityQueue<String, usize> {
-    rayon::scope(|scope| {
+fn word_count_all(args: &Args) -> SortedCounter<String> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(args.parallelism)
+        .build()
+        .unwrap();
+    pool.scope(|scope| {
         let (sender, receiver) = crossbeam_channel::unbounded();
-        start_file_collecting(scope, args, sender);
-        let mut counter = PriorityQueue::new();
-        for word in receiver {
-            let mut found = false;
-            counter.change_priority_by(&word, |n| {
-                found = true;
-                *n += 1;
+        scope.spawn(move |_| {
+            args.paths.par_iter().for_each_with(sender, |sender, path| {
+                if let Err(error) = word_count_file(sender, args, path) {
+                    eprintln!("Error: {error:?}");
+                }
             });
-            if !found {
-                counter.push(word, 1);
-            }
-        }
-        counter
+        });
+        receiver.into_iter().collect()
     })
 }
 
-fn start_file_collecting<'scope>(
-    scope: &rayon::Scope<'scope>,
-    args: &'scope Args,
-    sender: Sender<String>,
-) {
-    for path in &args.paths {
-        let sender = sender.clone();
-        let pattern = &args.pattern;
-        scope.spawn(move |_| {
-            if let Err(error) = word_count_file(sender, &path, pattern, args.case_insensitive) {
-                eprintln!("Error: {error:?}");
-            }
-        });
-    }
-}
-
-fn word_count_file(
-    sender: Sender<String>,
-    path: &Path,
-    pattern: &Regex,
-    case_insensitive: bool,
-) -> Result<()> {
+fn word_count_file(sender: &mut Sender<String>, args: &Args, path: &Path) -> Result<()> {
     let case_sensitivity = |word: &str| {
-        if case_insensitive {
+        if args.case_insensitive {
             word.to_lowercase()
         } else {
             word.to_owned()
@@ -85,7 +68,7 @@ fn word_count_file(
     let file = BufReader::new(file);
     for line in file.lines() {
         let line = line.with_context(|| format!("reading from file `{}`", path.display()))?;
-        for word in pattern.find_iter(&line) {
+        for word in args.pattern.find_iter(&line) {
             let word = case_sensitivity(word.as_str());
             sender.send(word).unwrap();
         }
