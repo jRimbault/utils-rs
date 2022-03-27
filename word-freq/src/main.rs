@@ -39,17 +39,22 @@ fn main() -> Result<()> {
 }
 
 fn word_count_all(args: &Args) -> SortedCounter<String> {
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(args.parallelism)
-        .build()
-        .unwrap();
-    pool.scope(|scope| {
-        let (sender, receiver) = crossbeam_channel::unbounded();
+    // there is always at least two threads, the one counting the items
+    // and the one spawning the readers.
+    // I'm only limiting the amount of parallel readers
+    rayon::scope(|scope| {
+        let (sender, receiver) = crossbeam_channel::bounded(32);
         scope.spawn(move |_| {
-            args.paths.par_iter().for_each_with(sender, |sender, path| {
-                if let Err(error) = word_count_file(sender, args, path) {
-                    eprintln!("Error: {error:?}");
-                }
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(args.parallelism)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                args.paths.par_iter().for_each_with(sender, |sender, path| {
+                    if let Err(error) = word_count_file(sender, args, path) {
+                        eprintln!("Error: {error:?}");
+                    }
+                });
             });
         });
         receiver.into_iter().collect()
