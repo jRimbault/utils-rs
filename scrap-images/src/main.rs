@@ -4,6 +4,7 @@ use select::predicate::Name;
 use tokio_stream::{self as stream, StreamExt};
 
 #[derive(Parser)]
+#[clap(author, version)]
 struct Cli {
     url: reqwest::Url,
     #[clap(parse(from_os_str), default_value = "out")]
