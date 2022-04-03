@@ -14,8 +14,10 @@ struct Cli {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
-    let res = reqwest::get(args.url.clone()).await?.text().await?;
-    let document = Document::from(res.as_str());
+    let document = {
+        let res = reqwest::get(args.url.clone()).await?.text().await?;
+        Document::from(res.as_str())
+    };
     let images_urls = document
         .find(Name("img"))
         .filter_map(|node| node.attr("src"))
