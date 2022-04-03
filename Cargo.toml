@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "word-freq",
-    "overloaded",
+    "scrap-images",
     "bag",
+    "overloaded",
+    "word-freq",
 ]
