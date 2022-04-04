@@ -1,8 +1,10 @@
 use clap::Parser;
 use select::document::Document;
 use select::predicate::Name;
+use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio_stream::StreamExt;
 
 #[derive(Parser, Clone)]
 #[clap(author, version)]
@@ -27,7 +29,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(out_dir.as_ref()).await?;
 
     let mut receiver = {
-        let (sender, receiver) = tokio::sync::mpsc::channel(32);
+        let backpressure = std::thread::available_parallelism()?.get();
+        let (sender, receiver) = tokio::sync::mpsc::channel(backpressure);
         for url in images_urls {
             let sender = sender.clone();
             let out_dir = Arc::clone(&out_dir);
@@ -50,12 +53,14 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Result<String> {
-    let image = reqwest::get(url.clone()).await?;
+    let image = reqwest::get(url.clone())
+        .await?
+        .bytes_stream()
+        .map(to_io_error);
     let file = url.path_segments().unwrap().last().unwrap();
     let file = out_dir.join(file);
     let mut file = tokio::fs::File::create(file).await?;
-    let bytes = image.bytes().await?;
-    let mut bytes = bytes.as_ref();
+    let mut bytes = tokio_util::io::StreamReader::new(image);
     tokio::io::copy(&mut bytes, &mut file).await?;
     Ok(url.path().to_owned())
 }
@@ -70,4 +75,14 @@ fn image_url(base_url: &reqwest::Url, image_source: &str) -> Option<reqwest::Url
         return Some(url);
     }
     None
+}
+
+fn to_io_error<T, E>(result: Result<T, E>) -> io::Result<T>
+where
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => Err(io::Error::new(io::ErrorKind::Other, error)),
+    }
 }
