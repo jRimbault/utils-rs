@@ -16,7 +16,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let Cli { url, out_dir } = Cli::parse_from(["", "https://rimbault.eu", "rimbault.eu"]);
+    let Cli { url, out_dir } = Cli::parse();
     let document = {
         let res = reqwest::get(url.clone()).await?.text().await?;
         Document::from(res.as_str())
