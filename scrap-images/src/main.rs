@@ -1,9 +1,6 @@
 use clap::Parser;
-use select::document::Document;
-use select::predicate::Name;
-use std::io;
-use std::path::PathBuf;
-use std::sync::Arc;
+use select::{document::Document, predicate::Name};
+use std::{io, path::PathBuf, sync::Arc};
 use tokio_stream::StreamExt;
 
 #[derive(Parser, Clone)]
