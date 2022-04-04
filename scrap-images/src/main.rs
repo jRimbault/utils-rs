@@ -17,32 +17,18 @@ struct Cli {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let Cli { url, out_dir } = Cli::parse();
-    let out_dir = Arc::new(out_dir);
     let document = {
         let res = reqwest::get(url.clone()).await?.text().await?;
         Document::from(res.as_str())
     };
-    let images_urls = document
-        .find(Name("img"))
-        .filter_map(|node| node.attr("src"))
-        .filter_map(|image_source| image_url(&url, image_source));
-    tokio::fs::create_dir_all(out_dir.as_ref()).await?;
-
-    let mut receiver = {
-        let backpressure = std::thread::available_parallelism()?.get();
-        let (sender, receiver) = tokio::sync::mpsc::channel(backpressure);
-        for url in images_urls {
-            let sender = sender.clone();
-            let out_dir = Arc::clone(&out_dir);
-            tokio::spawn(async move {
-                sender
-                    .send(download_image(out_dir, url).await)
-                    .await
-                    .unwrap();
-            });
-        }
-        receiver
-    };
+    tokio::fs::create_dir_all(&out_dir).await?;
+    let mut receiver = download_images(
+        Arc::new(out_dir),
+        document
+            .find(Name("img"))
+            .filter_map(|node| node.attr("src"))
+            .filter_map(|image_source| image_url(&url, image_source)),
+    );
     while let Some(result) = receiver.recv().await {
         match result {
             Ok(path) => println!("{}", path),
@@ -52,12 +38,35 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn download_images<I>(
+    out_dir: Arc<PathBuf>,
+    images_urls: I,
+) -> tokio::sync::mpsc::Receiver<anyhow::Result<String>>
+where
+    I: IntoIterator<Item = reqwest::Url>,
+{
+    let backpressure = std::thread::available_parallelism().unwrap().get();
+    let (sender, receiver) = tokio::sync::mpsc::channel(backpressure);
+    for url in images_urls {
+        let sender = sender.clone();
+        let out_dir = Arc::clone(&out_dir);
+        tokio::spawn(async move {
+            sender
+                .send(download_image(out_dir, url).await)
+                .await
+                .unwrap();
+        });
+    }
+    receiver
+}
+
 async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Result<String> {
     let image = reqwest::get(url.clone())
         .await?
         .bytes_stream()
         .map(to_io_error);
     let file = url.path_segments().unwrap().last().unwrap();
+    println!("downloading {}", url);
     let decoded = urlencoding::decode(file)?;
     let file = out_dir.join(decoded.as_ref());
     let mut writer = tokio::fs::File::create(file).await?;
