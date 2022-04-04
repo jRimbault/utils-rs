@@ -1,7 +1,8 @@
 use clap::Parser;
 use select::document::Document;
 use select::predicate::Name;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser, Clone)]
 #[clap(author, version)]
@@ -14,6 +15,7 @@ struct Cli {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let Cli { url, out_dir } = Cli::parse();
+    let out_dir = Arc::new(out_dir);
     let document = {
         let res = reqwest::get(url.clone()).await?.text().await?;
         Document::from(res.as_str())
@@ -22,16 +24,16 @@ async fn main() -> anyhow::Result<()> {
         .find(Name("img"))
         .filter_map(|node| node.attr("src"))
         .filter_map(|image_source| image_url(&url, image_source));
-    tokio::fs::create_dir_all(&out_dir).await?;
+    tokio::fs::create_dir_all(out_dir.as_ref()).await?;
 
     let mut receiver = {
         let (sender, receiver) = tokio::sync::mpsc::channel(32);
         for url in images_urls {
             let sender = sender.clone();
-            let out_dir = out_dir.clone();
+            let out_dir = Arc::clone(&out_dir);
             tokio::spawn(async move {
                 sender
-                    .send(download_image(&out_dir, url).await)
+                    .send(download_image(out_dir, url).await)
                     .await
                     .unwrap();
             });
@@ -47,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn download_image(out_dir: &Path, url: reqwest::Url) -> anyhow::Result<String> {
+async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Result<String> {
     let image = reqwest::get(url.clone()).await?;
     let file = url.path_segments().unwrap().last().unwrap();
     let file = out_dir.join(file);
