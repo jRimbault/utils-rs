@@ -58,11 +58,12 @@ async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Res
         .bytes_stream()
         .map(to_io_error);
     let file = url.path_segments().unwrap().last().unwrap();
-    let file = out_dir.join(file);
-    let mut file = tokio::fs::File::create(file).await?;
-    let mut bytes = tokio_util::io::StreamReader::new(image);
-    tokio::io::copy(&mut bytes, &mut file).await?;
-    Ok(url.path().to_owned())
+    let decoded = urlencoding::decode(file)?;
+    let file = out_dir.join(decoded.as_ref());
+    let mut writer = tokio::fs::File::create(file).await?;
+    let mut reader = tokio_util::io::StreamReader::new(image);
+    tokio::io::copy(&mut reader, &mut writer).await?;
+    Ok(decoded.into_owned())
 }
 
 fn image_url(base_url: &reqwest::Url, image_source: &str) -> Option<reqwest::Url> {
