@@ -16,7 +16,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let Cli { url, out_dir } = Cli::parse();
+    let Cli { url, out_dir } = Cli::parse_from(["", "https://rimbault.eu", "rimbault.eu"]);
     let document = {
         let res = reqwest::get(url.clone()).await?.text().await?;
         Document::from(res.as_str())
@@ -66,7 +66,6 @@ async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Res
         .bytes_stream()
         .map(to_io_error);
     let file = url.path_segments().unwrap().last().unwrap();
-    println!("downloading {}", url);
     let decoded = urlencoding::decode(file)?;
     let file = out_dir.join(decoded.as_ref());
     let mut writer = tokio::fs::File::create(file).await?;
