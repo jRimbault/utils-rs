@@ -10,6 +10,8 @@ select = "0.5.0"
 tokio-stream = "0.1.8"
 tokio-util = { version = "0.7.1", features = ["io"] }
 urlencoding = "2.1.0"
+tracing = "0.1.32"
+# serde = { version = "1.0.136", features = ["derive"] }
 
 [dependencies.reqwest]
 version = "0.11.10"
@@ -18,3 +20,7 @@ features = ["blocking", "stream"]
 [dependencies.tokio]
 version = "1.17.0"
 features = ["macros", "fs"]
+
+[dependencies.tracing-subscriber]
+version = "0.3.10"
+features = ["json", "env-filter"]

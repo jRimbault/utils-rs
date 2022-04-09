@@ -2,10 +2,12 @@ use clap::Parser;
 use select::{document::Document, predicate::Name};
 use std::{io, path::PathBuf, sync::Arc};
 use tokio_stream::StreamExt;
+use tracing::Level;
+use tracing_subscriber::{util::SubscriberInitExt, EnvFilter, FmtSubscriber};
 
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Debug)]
 #[clap(author, version)]
-struct Cli {
+struct Args {
     url: reqwest::Url,
     #[clap(parse(from_os_str), default_value = "out")]
     out_dir: PathBuf,
@@ -13,18 +15,19 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let Cli { url, out_dir } = Cli::parse();
+    setup_tracing()?;
+    let args = Args::parse();
     let document = {
-        let res = reqwest::get(url.clone()).await?.text().await?;
+        let res = reqwest::get(args.url.clone()).await?.text().await?;
         Document::from(res.as_str())
     };
-    tokio::fs::create_dir_all(&out_dir).await?;
+    tokio::fs::create_dir_all(&args.out_dir).await?;
     let mut receiver = download_images(
-        Arc::new(out_dir),
+        Arc::new(args.out_dir.clone()),
         document
             .find(Name("img"))
             .filter_map(|node| node.attr("src"))
-            .filter_map(|image_source| image_url(&url, image_source)),
+            .filter_map(|image_source| image_url(&args.url, image_source)),
     );
     while let Some(result) = receiver.recv().await {
         match result {
@@ -57,6 +60,7 @@ where
     receiver
 }
 
+#[tracing::instrument]
 async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Result<String> {
     let image = reqwest::get(url.clone())
         .await?
@@ -81,6 +85,15 @@ fn image_url(base_url: &reqwest::Url, image_source: &str) -> Option<reqwest::Url
         return Some(url);
     }
     None
+}
+
+fn setup_tracing() -> Result<(), tracing_subscriber::util::TryInitError> {
+    FmtSubscriber::builder()
+        .with_max_level(Level::DEBUG)
+        .with_env_filter(EnvFilter::from_default_env())
+        .compact()
+        .finish()
+        .try_init()
 }
 
 fn to_io_error<T, E>(result: Result<T, E>) -> io::Result<T>
