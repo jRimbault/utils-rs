@@ -2,7 +2,7 @@ use clap::Parser;
 use select::{document::Document, predicate::Name};
 use std::{io, path::PathBuf, sync::Arc};
 use tokio_stream::StreamExt;
-use tracing::Level;
+use tracing::{metadata::LevelFilter, Level};
 use tracing_subscriber::{util::SubscriberInitExt, EnvFilter, FmtSubscriber};
 
 #[derive(Parser, Clone, Debug)]
@@ -38,6 +38,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tracing::instrument(skip(images_urls))]
 fn download_images<I>(
     out_dir: Arc<PathBuf>,
     images_urls: I,
@@ -45,8 +46,9 @@ fn download_images<I>(
 where
     I: IntoIterator<Item = reqwest::Url>,
 {
+    tracing::debug!("downloading images");
     let backpressure = std::thread::available_parallelism().unwrap().get();
-    let (sender, receiver) = tokio::sync::mpsc::channel(backpressure);
+    let (sender, receiver) = tokio::sync::mpsc::channel(backpressure * 2);
     for url in images_urls {
         let sender = sender.clone();
         let out_dir = Arc::clone(&out_dir);
@@ -60,7 +62,7 @@ where
     receiver
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(out_dir))]
 async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Result<String> {
     let image = reqwest::get(url.clone())
         .await?
@@ -69,9 +71,10 @@ async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Res
     let file = url.path_segments().unwrap().last().unwrap();
     let decoded = urlencoding::decode(file)?;
     let file = out_dir.join(decoded.as_ref());
-    let mut writer = tokio::fs::File::create(file).await?;
+    let mut writer = tokio::fs::File::create(&file).await?;
     let mut reader = tokio_util::io::StreamReader::new(image);
     tokio::io::copy(&mut reader, &mut writer).await?;
+    tracing::debug!("image {:?} written", file);
     Ok(decoded.into_owned())
 }
 
@@ -87,13 +90,17 @@ fn image_url(base_url: &reqwest::Url, image_source: &str) -> Option<reqwest::Url
     None
 }
 
-fn setup_tracing() -> Result<(), tracing_subscriber::util::TryInitError> {
-    FmtSubscriber::builder()
+fn setup_tracing() -> anyhow::Result<()> {
+    Ok(FmtSubscriber::builder()
         .with_max_level(Level::DEBUG)
-        .with_env_filter(EnvFilter::from_default_env())
-        .compact()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(concat!(env!("CARGO_PKG_NAME"), "=info").parse()?)
+                .from_env()?,
+        )
+        .pretty()
         .finish()
-        .try_init()
+        .try_init()?)
 }
 
 fn to_io_error<T, E>(result: Result<T, E>) -> io::Result<T>
