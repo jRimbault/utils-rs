@@ -1,0 +1,13 @@
+[package]
+name = "uptime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.52"
+clap = { version = "3.1.6", features = ["derive"] }
+bitvec = "1.0.0"
+conv = "0.3.3"
+chrono = "0.4.19"
+crossbeam = "0.8.1"
+indexmap = "1.8.1"
