@@ -2,7 +2,7 @@ use clap::Parser;
 use select::{document::Document, predicate::Name};
 use std::{io, path::PathBuf, sync::Arc};
 use tokio_stream::StreamExt;
-use tracing::{metadata::LevelFilter, Level};
+use tracing::Level;
 use tracing_subscriber::{util::SubscriberInitExt, EnvFilter, FmtSubscriber};
 
 #[derive(Parser, Clone, Debug)]
