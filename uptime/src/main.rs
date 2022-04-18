@@ -64,7 +64,7 @@ where
         }
         let uptime = list.uptime_rate()?;
         sender.send(uptime).unwrap();
-        // attempt at drift correction
+        // attempt at drift correction, I should use a timer
         thread::sleep(timings.interval - start.elapsed());
     }
 }
