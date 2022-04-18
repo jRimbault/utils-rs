@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
             let (sender, receiver) = crossbeam::channel::bounded(0);
             scope.spawn(move |_| {
                 for (i, uptime) in receiver.into_iter().enumerate() {
-                    eprint!("{:>6} {uptime:.2}%\r", i + 1);
+                    eprint!("{:>6} {uptime:>6.2}%\r", i + 1);
                     io::stderr().flush().unwrap();
                 }
                 eprint!("             \r");
