@@ -47,7 +47,6 @@ fn poll<A>(
 ) -> anyhow::Result<Stats>
 where
     A: ToSocketAddrs,
-    A: Clone,
 {
     let start = Instant::now();
     let mut list = Stats::new();
