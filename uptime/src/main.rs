@@ -51,21 +51,34 @@ fn poll<A>(
 where
     A: ToSocketAddrs,
 {
-    let start = Instant::now();
-    let mut list = Stats::new();
     let address = address.to_socket_addrs()?.next().unwrap();
-    loop {
-        if start.elapsed() >= timings.period {
-            return Ok(list);
-        }
+    let stats = crossbeam::scope(|scope| {
+        let (tx, rx) = crossbeam::channel::bounded(0);
+        let (stats_tx, stats_rx) = crossbeam::channel::bounded(0);
+        scope.spawn(move |_| {
+            let mut list = Stats::new();
+            for result in rx {
+                match result {
+                    Ok(_) => list.add_success(),
+                    Err(_) => list.add_failure(),
+                }
+                sender.send(list.uptime_rate().unwrap()).unwrap();
+            }
+            stats_tx.send(list).unwrap();
+        });
         let start = Instant::now();
-        match TcpStream::connect_timeout(&address, timings.timeout()) {
-            Ok(_) => list.add_success(),
-            Err(_) => list.add_failure(),
-        }
-        let uptime = list.uptime_rate()?;
-        sender.send(uptime).unwrap();
-        // attempt at drift correction, I should use a timer
-        thread::sleep(timings.interval - start.elapsed());
-    }
+        crossbeam::channel::tick(timings.interval)
+            .into_iter()
+            .take_while(|_| start.elapsed() < timings.period)
+            .for_each(move |_| {
+                let tx = tx.clone();
+                scope.spawn(move |_| {
+                    tx.send(TcpStream::connect_timeout(&address, timings.timeout()))
+                        .unwrap();
+                });
+            });
+        stats_rx.recv().unwrap()
+    })
+    .unwrap();
+    Ok(stats)
 }
