@@ -8,7 +8,6 @@ use indexmap::IndexMap;
 use std::{
     io::{self, Write},
     net::{TcpStream, ToSocketAddrs},
-    thread,
     time::Instant,
 };
 use wrappers::{Percent, Stats};
