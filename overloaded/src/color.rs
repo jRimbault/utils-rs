@@ -21,7 +21,7 @@ pub enum Error {
 
 /// ```
 /// use std::convert::TryFrom;
-/// use playground::color;
+/// use overloaded::color;
 ///
 /// assert!(color::Hue::try_from(1.0001).is_err());
 /// assert!(color::Hue::try_from(-0.0001).is_err());
@@ -32,7 +32,7 @@ pub enum Error {
 pub struct Hue(f64);
 
 /// ```
-/// use playground::color;
+/// use overloaded::color;
 ///
 /// assert_eq!(
 ///     color::rgb((255, 0, 64)).unwrap(),
