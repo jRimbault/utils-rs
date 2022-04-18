@@ -2,6 +2,7 @@ mod args;
 mod wrappers;
 
 use args::{Args, Timings};
+use chrono::SecondsFormat;
 use clap::Parser;
 use indexmap::IndexMap;
 use std::{
@@ -22,7 +23,7 @@ fn main() -> anyhow::Result<()> {
             let (sender, receiver) = crossbeam::channel::bounded(0);
             scope.spawn(move |_| {
                 for (i, uptime) in receiver.into_iter().enumerate() {
-                    eprint!("{:<6}{uptime:.2}%\r", i + 1);
+                    eprint!("{:>6} {uptime:.2}%\r", i + 1);
                     io::stderr().flush().unwrap();
                 }
                 eprint!("             \r");
@@ -32,7 +33,8 @@ fn main() -> anyhow::Result<()> {
         })
         .unwrap()?;
         println!(
-            "{start}: {stats:>10?} [{}/{} tests]",
+            "{}: {stats:>10?} [{}/{} tests]",
+            start.to_rfc3339_opts(SecondsFormat::Secs, true),
             stats.successes(),
             stats.len()
         );
@@ -55,12 +57,14 @@ where
         if start.elapsed() >= timings.period {
             return Ok(list);
         }
+        let start = Instant::now();
         match TcpStream::connect_timeout(&address, timings.timeout()) {
             Ok(_) => list.add_success(),
             Err(_) => list.add_failure(),
         }
         let uptime = list.uptime_rate()?;
         sender.send(uptime).unwrap();
-        thread::sleep(timings.interval);
+        // attempt at drift correction
+        thread::sleep(timings.interval - start.elapsed());
     }
 }
