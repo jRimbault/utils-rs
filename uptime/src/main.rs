@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     let mut map = IndexMap::new();
     loop {
         let start = chrono::Utc::now();
-        let stats = crossbeam::scope(|scope| {
+        let stats = rayon::scope(|scope| {
             let (progress_tx, progress_rx) = channel::bounded(0);
             scope.spawn(move |_| {
                 for (i, uptime) in progress_rx.into_iter().enumerate() {
@@ -34,8 +34,7 @@ fn main() -> anyhow::Result<()> {
                 io::stderr().flush().unwrap();
             });
             poll(address, timings, progress_tx)
-        })
-        .expect("spawning the main polling and reporting routine")?;
+        })?;
         println!(
             "{}: {:>6.2}% [{}/{} tests]",
             start.to_rfc3339_opts(SecondsFormat::Secs, true),
@@ -52,7 +51,7 @@ fn poll(
     timings: Timings,
     progress_tx: channel::Sender<Percent>,
 ) -> anyhow::Result<Stats> {
-    let stats = crossbeam::scope(|scope| {
+    let stats = rayon::scope(|scope| {
         let (poll_tx, poll_rx) = channel::bounded(0);
         let (stats_tx, stats_rx) = channel::bounded(0);
         scope.spawn(move |_| {
@@ -78,10 +77,9 @@ fn poll(
                     }
                 });
             });
-        stats_rx.recv().expect("should collect results")
-    })
-    .expect("spawning the internal polling routine");
-    Ok(stats)
+        stats_rx.recv()
+    });
+    Ok(stats?)
 }
 
 fn try_connect(
@@ -115,22 +113,24 @@ mod test {
     use super::{channel, count_results};
 
     #[test]
-    fn result_counting() {
-        let stats = crossbeam::scope(|scope| {
+    fn result_counting() -> anyhow::Result<()> {
+        let stats = rayon::scope(|scope| {
             let (progress_tx, progress_rx) = channel::unbounded();
             let (results_tx, results_rx) = channel::unbounded();
             let (stats_tx, stats_rx) = channel::unbounded();
             scope.spawn(move |_| progress_rx.into_iter().for_each(|_i| ()));
-            scope.spawn(move |_| count_results(results_rx, progress_tx, stats_tx));
+            scope.spawn(move |_| {
+                let _ = count_results(results_rx, progress_tx, stats_tx);
+            });
             for i in 0..10 {
                 results_tx.send(Ok(i)).unwrap();
                 results_tx.send(Err(i)).unwrap();
             }
             drop(results_tx);
-            stats_rx.recv().unwrap()
-        })
-        .unwrap();
+            stats_rx.recv()
+        })?;
         assert_eq!(stats.len(), 20);
         assert_eq!(stats.successes(), 10);
+        Ok(())
     }
 }
