@@ -5,6 +5,7 @@ use conv::ValueFrom;
 #[derive(Clone, Copy)]
 pub struct Percent(f64);
 
+#[derive(Debug)]
 pub struct Stats(BitVec);
 
 impl Stats {
