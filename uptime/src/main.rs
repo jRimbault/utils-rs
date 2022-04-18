@@ -52,11 +52,11 @@ where
 {
     let address = address.to_socket_addrs()?.next().unwrap();
     let stats = crossbeam::scope(|scope| {
-        let (tx, rx) = crossbeam::channel::bounded(0);
+        let (poll_tx, poll_rx) = crossbeam::channel::bounded(0);
         let (stats_tx, stats_rx) = crossbeam::channel::bounded(0);
         scope.spawn(move |_| {
             let mut list = Stats::new();
-            for result in rx {
+            for result in poll_rx {
                 match result {
                     Ok(_) => list.add_success(),
                     Err(_) => list.add_failure(),
@@ -70,9 +70,10 @@ where
             .into_iter()
             .take_while(|_| start.elapsed() < timings.period)
             .for_each(move |_| {
-                let tx = tx.clone();
+                let poll_tx = poll_tx.clone();
                 scope.spawn(move |_| {
-                    tx.send(TcpStream::connect_timeout(&address, timings.timeout()))
+                    poll_tx
+                        .send(TcpStream::connect_timeout(&address, timings.timeout()))
                         .unwrap();
                 });
             });
