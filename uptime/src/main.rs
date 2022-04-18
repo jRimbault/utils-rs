@@ -65,6 +65,11 @@ where
             }
             stats_tx.send(list).unwrap();
         });
+        let tx = poll_tx.clone();
+        scope.spawn(move |_| {
+            tx.send(TcpStream::connect_timeout(&address, timings.timeout()))
+                .unwrap();
+        });
         let start = Instant::now();
         crossbeam::channel::tick(timings.interval)
             .into_iter()
