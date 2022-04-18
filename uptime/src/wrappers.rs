@@ -40,10 +40,3 @@ impl std::fmt::Debug for Percent {
         self.0.fmt(f)
     }
 }
-
-impl std::fmt::Debug for Stats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let rate = self.uptime_rate().map_err(|_| std::fmt::Error)?;
-        write!(f, "{:.2}%", rate)
-    }
-}

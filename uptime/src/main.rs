@@ -33,8 +33,9 @@ fn main() -> anyhow::Result<()> {
         })
         .unwrap()?;
         println!(
-            "{}: {stats:>10?} [{}/{} tests]",
+            "{}: {:>6.2}% [{}/{} tests]",
             start.to_rfc3339_opts(SecondsFormat::Secs, true),
+            stats.uptime_rate()?,
             stats.successes(),
             stats.len()
         );
