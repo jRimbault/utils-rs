@@ -70,12 +70,7 @@ fn poll(
             eprintln!("{error}");
         }
     });
-    let start = Instant::now();
-    for _ in std::iter::once(start)
-        .chain(channel::tick(timings.interval))
-        .into_iter()
-        .take_while(|_| start.elapsed() < timings.period)
-    {
+    for _ in timer(timings) {
         let poll_tx = poll_tx.clone();
         scope.spawn(move |_| {
             if let Err(error) = try_connect(poll_tx, address, timings) {
@@ -83,7 +78,16 @@ fn poll(
             }
         });
     }
+    drop(poll_tx);
     Ok(stats_rx.recv()?)
+}
+
+fn timer(timings: Timings) -> impl Iterator<Item = Instant> {
+    let start = Instant::now();
+    std::iter::once(start)
+        .chain(channel::tick(timings.interval))
+        .into_iter()
+        .take_while(move |_| start.elapsed() < timings.period)
 }
 
 fn try_connect(

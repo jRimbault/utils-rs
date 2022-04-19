@@ -45,7 +45,7 @@ impl Timings {
     const MAX_TIMEOUT: Duration = Duration::from_millis(500);
 
     pub fn timeout(&self) -> Duration {
-        (self.interval / 2)
+        self.interval
             .max(Timings::MIN_TIMEOUT)
             .min(Timings::MAX_TIMEOUT)
     }
