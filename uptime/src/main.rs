@@ -26,16 +26,15 @@ fn main() -> anyhow::Result<()> {
         let mut map = IndexMap::new();
         loop {
             let start = chrono::Utc::now();
-            let progress_tx = progress_tx.clone();
-            let stats = poll(scope, address, timings, progress_tx)?;
+            let results = poll(scope, address, timings, progress_tx.clone())?;
             println!(
                 "{}: {:>6.2}% [{}/{} tests]",
                 start.to_rfc3339_opts(SecondsFormat::Secs, true),
-                stats.uptime_rate()?,
-                stats.successes(),
-                stats.len()
+                results.uptime_rate()?,
+                results.successes(),
+                results.len()
             );
-            map.insert(start, stats);
+            map.insert(start, results);
         }
     })
 }
