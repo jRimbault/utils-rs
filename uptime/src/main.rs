@@ -71,18 +71,18 @@ fn poll(
         }
     });
     let start = Instant::now();
-    std::iter::once(start)
+    for _ in std::iter::once(start)
         .chain(channel::tick(timings.interval))
         .into_iter()
         .take_while(|_| start.elapsed() < timings.period)
-        .for_each(move |_| {
-            let poll_tx = poll_tx.clone();
-            scope.spawn(move |_| {
-                if let Err(error) = try_connect(poll_tx, address, timings) {
-                    eprintln!("{error}");
-                }
-            });
+    {
+        let poll_tx = poll_tx.clone();
+        scope.spawn(move |_| {
+            if let Err(error) = try_connect(poll_tx, address, timings) {
+                eprintln!("{error}");
+            }
         });
+    }
     Ok(stats_rx.recv()?)
 }
 
