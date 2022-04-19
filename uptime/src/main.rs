@@ -40,23 +40,6 @@ fn main() -> anyhow::Result<()> {
     })
 }
 
-fn report(progress_rx: channel::Receiver<Option<Percent>>) -> ! {
-    loop {
-        for (i, uptime) in progress_rx
-            .clone()
-            .into_iter()
-            .take_while(Option::is_some)
-            .flatten()
-            .enumerate()
-        {
-            eprint!("{:>7} {uptime:>6.2}%\r", i + 1);
-            io::stderr().flush().unwrap();
-        }
-        eprint!("             \r");
-        io::stderr().flush().unwrap();
-    }
-}
-
 fn poll(
     scope: &rayon::Scope,
     address: SocketAddr,
@@ -115,6 +98,23 @@ fn count_results<T, E>(
     progress_tx.send(None).unwrap();
     stats_tx.send(list)?;
     Ok(())
+}
+
+fn report(progress_rx: channel::Receiver<Option<Percent>>) -> ! {
+    loop {
+        for (i, uptime) in progress_rx
+            .clone()
+            .into_iter()
+            .take_while(Option::is_some)
+            .flatten()
+            .enumerate()
+        {
+            eprint!("{:>7} {uptime:>6.2}%\r", i + 1);
+            io::stderr().flush().unwrap();
+        }
+        eprint!("             \r");
+        io::stderr().flush().unwrap();
+    }
 }
 
 #[cfg(test)]
