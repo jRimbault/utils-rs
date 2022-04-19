@@ -49,7 +49,7 @@ fn report(progress_rx: channel::Receiver<Option<Percent>>) -> ! {
             .flatten()
             .enumerate()
         {
-            eprint!("{:>6} {uptime:>6.2}%\r", i + 1);
+            eprint!("{:>7} {uptime:>6.2}%\r", i + 1);
             io::stderr().flush().unwrap();
         }
         eprint!("             \r");
