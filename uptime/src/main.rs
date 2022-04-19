@@ -20,66 +20,70 @@ fn main() -> anyhow::Result<()> {
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| anyhow::anyhow!("there should be at least 1 address here"))?;
-    let mut map = IndexMap::new();
+    rayon::scope(|scope| {
+        let (progress_tx, progress_rx) = channel::bounded(0);
+        scope.spawn(move |_| report(progress_rx));
+        let mut map = IndexMap::new();
+        loop {
+            let start = chrono::Utc::now();
+            let progress_tx = progress_tx.clone();
+            let stats = poll(scope, address, timings, progress_tx)?;
+            println!(
+                "{}: {:>6.2}% [{}/{} tests]",
+                start.to_rfc3339_opts(SecondsFormat::Secs, true),
+                stats.uptime_rate()?,
+                stats.successes(),
+                stats.len()
+            );
+            map.insert(start, stats);
+        }
+    })
+}
+
+fn report(progress_rx: channel::Receiver<Option<Percent>>) -> ! {
     loop {
-        let start = chrono::Utc::now();
-        let stats = rayon::scope(|scope| {
-            let (progress_tx, progress_rx) = channel::bounded(0);
-            scope.spawn(move |_| {
-                for (i, uptime) in progress_rx.into_iter().enumerate() {
-                    eprint!("{:>6} {uptime:>6.2}%\r", i + 1);
-                    io::stderr().flush().unwrap();
-                }
-                eprint!("             \r");
-                io::stderr().flush().unwrap();
-            });
-            poll(address, timings, progress_tx)
-        })?;
-        println!(
-            "{}: {:>6.2}% [{}/{} tests]",
-            start.to_rfc3339_opts(SecondsFormat::Secs, true),
-            stats.uptime_rate()?,
-            stats.successes(),
-            stats.len()
-        );
-        map.insert(start, stats);
+        for (i, uptime) in progress_rx
+            .clone()
+            .into_iter()
+            .take_while(Option::is_some)
+            .flatten()
+            .enumerate()
+        {
+            eprint!("{:>6} {uptime:>6.2}%\r", i + 1);
+            io::stderr().flush().unwrap();
+        }
+        eprint!("             \r");
+        io::stderr().flush().unwrap();
     }
 }
 
 fn poll(
+    scope: &rayon::Scope,
     address: SocketAddr,
     timings: Timings,
-    progress_tx: channel::Sender<Percent>,
+    progress_tx: channel::Sender<Option<Percent>>,
 ) -> anyhow::Result<Stats> {
-    let stats = rayon::scope(|scope| {
-        let (poll_tx, poll_rx) = channel::bounded(0);
-        let (stats_tx, stats_rx) = channel::bounded(0);
-        scope.spawn(move |_| {
-            if let Err(error) = count_results(poll_rx, progress_tx, stats_tx) {
-                eprintln!("{error}");
-            }
-        });
-        let tx = poll_tx.clone();
-        scope.spawn(move |_| {
-            if let Err(error) = try_connect(tx, address, timings) {
-                eprintln!("{error}");
-            }
-        });
-        let start = Instant::now();
-        channel::tick(timings.interval)
-            .into_iter()
-            .take_while(|_| start.elapsed() < timings.period)
-            .for_each(move |_| {
-                let poll_tx = poll_tx.clone();
-                scope.spawn(move |_| {
-                    if let Err(error) = try_connect(poll_tx, address, timings) {
-                        eprintln!("{error}");
-                    }
-                });
-            });
-        stats_rx.recv()
+    let (poll_tx, poll_rx) = channel::bounded(0);
+    let (stats_tx, stats_rx) = channel::bounded(0);
+    scope.spawn(move |_| {
+        if let Err(error) = count_results(poll_rx, progress_tx, stats_tx) {
+            eprintln!("{error}");
+        }
     });
-    Ok(stats?)
+    let start = Instant::now();
+    std::iter::once(start)
+        .chain(channel::tick(timings.interval))
+        .into_iter()
+        .take_while(|_| start.elapsed() < timings.period)
+        .for_each(move |_| {
+            let poll_tx = poll_tx.clone();
+            scope.spawn(move |_| {
+                if let Err(error) = try_connect(poll_tx, address, timings) {
+                    eprintln!("{error}");
+                }
+            });
+        });
+    Ok(stats_rx.recv()?)
 }
 
 fn try_connect(
@@ -93,7 +97,7 @@ fn try_connect(
 
 fn count_results<T, E>(
     results_rx: channel::Receiver<Result<T, E>>,
-    progress_tx: channel::Sender<Percent>,
+    progress_tx: channel::Sender<Option<Percent>>,
     stats_tx: channel::Sender<Stats>,
 ) -> anyhow::Result<()> {
     let mut list = Stats::new();
@@ -102,8 +106,9 @@ fn count_results<T, E>(
             Ok(_) => list.add_success(),
             Err(_) => list.add_failure(),
         }
-        progress_tx.send(list.uptime_rate()?)?;
+        progress_tx.send(Some(list.uptime_rate()?))?;
     }
+    progress_tx.send(None).unwrap();
     stats_tx.send(list)?;
     Ok(())
 }

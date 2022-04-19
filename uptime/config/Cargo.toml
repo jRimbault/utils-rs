@@ -1,0 +1,11 @@
+[package]
+name = "uptime_config"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0.136", features = ["derive"] }
+serde_with = "1.12.1"
+
+[dev-dependencies]
+toml = "0.5.9"
