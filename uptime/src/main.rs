@@ -94,12 +94,12 @@ fn count_results<T, E>(
         }
         progress_tx.send(Some(list.uptime_rate()?))?;
     }
-    progress_tx.send(None).unwrap();
+    progress_tx.send(None)?;
     stats_tx.send(list)?;
     Ok(())
 }
 
-fn report(progress_rx: channel::Receiver<Option<Percent>>) -> ! {
+fn report(progress_rx: channel::Receiver<Option<Percent>>) {
     loop {
         for (i, uptime) in progress_rx
             .clone()
