@@ -64,6 +64,7 @@ pub mod iter {
     #[derive(Debug)]
     pub struct IntoIter {
         start: Instant,
+        first: bool,
         limit: Option<Duration>,
         ticker: crossbeam_channel::IntoIter<Instant>,
     }
@@ -75,6 +76,7 @@ pub mod iter {
         fn into_iter(self) -> Self::IntoIter {
             let Ticker { limit, interval } = self;
             IntoIter {
+                first: true,
                 limit,
                 start: Instant::now(),
                 ticker: crossbeam_channel::tick(interval).into_iter(),
@@ -86,8 +88,12 @@ pub mod iter {
         type Item = Instant;
 
         fn next(&mut self) -> Option<Self::Item> {
-            match self.limit {
-                Some(limit) if self.start.elapsed() > limit => None,
+            match (self.limit, self.first) {
+                (_, true) => {
+                    self.first = false;
+                    Some(self.start)
+                }
+                (Some(limit), _) if self.start.elapsed() > limit => None,
                 _ => self.ticker.next(),
             }
         }
