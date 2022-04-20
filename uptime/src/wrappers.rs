@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bitvec::vec::BitVec;
 use conv::ValueFrom;
 
@@ -19,7 +21,7 @@ impl Stats {
         self.0.push(false)
     }
     pub fn success_rate(&self) -> Result<Percent, conv::GeneralErrorKind> {
-        success_rate(&self.0)
+        success_rate(self.0.count_ones(), self.0.len())
     }
     pub fn successes(&self) -> usize {
         self.0.count_ones()
@@ -30,33 +32,31 @@ impl Stats {
 }
 
 #[derive(Debug)]
-pub struct RollingStats(BitVec);
+pub struct RollingStats(VecDeque<bool>);
 
 impl RollingStats {
     pub fn with_capacity(capacity: usize) -> RollingStats {
-        let mut list = BitVec::with_capacity(capacity);
+        let mut list = VecDeque::with_capacity(capacity);
         for _ in 0..capacity {
-            list.push(true);
+            list.push_back(true);
         }
         RollingStats(list)
     }
     pub fn add(&mut self, value: bool) {
-        let len = self.0.len();
-        self.0.shift_left(1);
-        self.0.resize(len - 1, true);
-        self.0.push(value)
+        self.0.pop_front();
+        self.0.push_back(value);
     }
     pub fn success_rate(&self) -> Result<Percent, conv::GeneralErrorKind> {
-        success_rate(&self.0)
+        success_rate(self.0.iter().filter(|&i| *i).count(), self.0.len())
     }
     pub fn len(&self) -> usize {
         self.0.len()
     }
 }
 
-fn success_rate(list: &BitVec) -> Result<Percent, conv::GeneralErrorKind> {
-    let successes = f64::value_from(list.count_ones())?;
-    let total = f64::value_from(list.len())?;
+fn success_rate(successes: usize, total: usize) -> Result<Percent, conv::GeneralErrorKind> {
+    let successes = f64::value_from(successes)?;
+    let total = f64::value_from(total)?;
     Ok(Percent(successes / total))
 }
 
