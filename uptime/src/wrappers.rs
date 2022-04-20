@@ -32,22 +32,26 @@ impl Stats {
 }
 
 #[derive(Debug)]
-pub struct RollingStats(VecDeque<bool>);
+pub struct RollingStats(BitVec);
 
 impl RollingStats {
     pub fn with_capacity(capacity: usize) -> RollingStats {
-        let mut list = VecDeque::with_capacity(capacity);
+        let mut list = BitVec::with_capacity(capacity);
         for _ in 0..capacity {
-            list.push_back(true);
+            list.push(true);
         }
         RollingStats(list)
     }
     pub fn add(&mut self, value: bool) {
-        self.0.pop_front();
-        self.0.push_back(value);
+        let len = self.0.len();
+        self.0.shift_left(1);
+        unsafe {
+            self.0.set_len(len - 1);
+        }
+        self.0.push(value);
     }
     pub fn success_rate(&self) -> Result<Percent, conv::GeneralErrorKind> {
-        success_rate(self.0.iter().filter(|&i| *i).count(), self.0.len())
+        success_rate(self.0.count_ones(), self.0.len())
     }
 }
 
