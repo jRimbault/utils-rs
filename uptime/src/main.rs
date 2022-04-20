@@ -110,12 +110,7 @@ fn report(progress_rx: channel::Receiver<Option<bool>>, timings: Timings) {
             .enumerate()
         {
             rolling.add(result);
-            eprint!(
-                "{:>7} {:>6.2}% [{}]\r",
-                i + 1,
-                rolling.success_rate().unwrap(),
-                rolling.len()
-            );
+            eprint!("{:>7} {:>6.2}%\r", i + 1, rolling.success_rate().unwrap());
             io::stderr().flush().unwrap();
         }
         eprint!("             \r");
