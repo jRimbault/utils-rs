@@ -52,7 +52,8 @@ fn poll(
             eprintln!("{error}");
         }
     });
-    for _ in timer(timings) {
+    let ticker = timer(timings)?;
+    for _ in ticker {
         let poll_tx = poll_tx.clone();
         scope.spawn(move |_| {
             if let Err(error) = try_connect(poll_tx, address, timings) {
@@ -64,12 +65,11 @@ fn poll(
     Ok(stats_rx.recv()?)
 }
 
-fn timer(timings: Timings) -> impl Iterator<Item = Instant> {
-    let start = Instant::now();
-    std::iter::once(start)
-        .chain(channel::tick(timings.interval))
-        .into_iter()
-        .take_while(move |_| start.elapsed() < timings.period)
+fn timer(timings: Timings) -> Result<ticker::Ticker, ticker::Error> {
+    ticker::Ticker::builder()
+        .limit(timings.period)
+        .interval(timings.interval)
+        .build()
 }
 
 fn try_connect(

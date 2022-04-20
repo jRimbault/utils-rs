@@ -51,8 +51,7 @@ fn interval_between_ticks_should_be_consistent() {
     let eq = |a, b| (a + ms(30) > b && b + ms(30) > a);
     let ticker = Ticker::builder().interval(ms(100)).build().unwrap();
     let start = Instant::now();
-    // first tick should be immediate
     for (i, tick) in ticker.into_iter().enumerate().take(5) {
-        assert!(eq(tick, start + ms(100 * i as u64)));
+        assert!(eq(tick, start + ms(100 * (i + 1) as u64)));
     }
 }

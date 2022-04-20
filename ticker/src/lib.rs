@@ -50,10 +50,12 @@ impl TickerBuilder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("missing interval")]
     MissingInterval,
-    IntervalLargerThanLimit { limit: Duration, interval: Duration },
+    #[error("interval ({interval:?}) should be smaller than the limit ({limit:?})")]
+    IntervalLargerThanLimit { interval: Duration, limit: Duration },
 }
 
 pub mod iter {
@@ -64,7 +66,6 @@ pub mod iter {
     #[derive(Debug)]
     pub struct IntoIter {
         start: Instant,
-        first: bool,
         limit: Option<Duration>,
         ticker: crossbeam_channel::IntoIter<Instant>,
     }
@@ -76,7 +77,6 @@ pub mod iter {
         fn into_iter(self) -> Self::IntoIter {
             let Ticker { limit, interval } = self;
             IntoIter {
-                first: true,
                 limit,
                 start: Instant::now(),
                 ticker: crossbeam_channel::tick(interval).into_iter(),
@@ -88,12 +88,8 @@ pub mod iter {
         type Item = Instant;
 
         fn next(&mut self) -> Option<Self::Item> {
-            match (self.limit, self.first) {
-                (_, true) => {
-                    self.first = false;
-                    Some(self.start)
-                }
-                (Some(limit), _) if self.start.elapsed() > limit => None,
+            match self.limit {
+                Some(limit) if self.start.elapsed() > limit => None,
                 _ => self.ticker.next(),
             }
         }

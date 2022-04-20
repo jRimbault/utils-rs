@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 crossbeam-channel = "0.5.4"
+thiserror = "1.0.30"

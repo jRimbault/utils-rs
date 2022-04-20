@@ -1517,6 +1517,7 @@ name = "ticker"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "thiserror",
 ]
 
 [[package]]
@@ -1750,6 +1751,7 @@ dependencies = [
  "crossbeam",
  "indexmap",
  "rayon",
+ "ticker",
 ]
 
 [[package]]

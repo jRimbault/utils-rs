@@ -12,3 +12,4 @@ chrono = "0.4.19"
 crossbeam = "0.8.1"
 indexmap = "1.8.1"
 rayon = "1.5.2"
+ticker = { path = "../ticker" }
