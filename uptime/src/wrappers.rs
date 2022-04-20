@@ -49,9 +49,6 @@ impl RollingStats {
     pub fn success_rate(&self) -> Result<Percent, conv::GeneralErrorKind> {
         success_rate(self.0.iter().filter(|&i| *i).count(), self.0.len())
     }
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
 }
 
 fn success_rate(successes: usize, total: usize) -> Result<Percent, conv::GeneralErrorKind> {
