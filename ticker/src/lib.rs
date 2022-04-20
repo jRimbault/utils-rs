@@ -43,7 +43,7 @@ impl TickerBuilder {
         let interval = interval.ok_or_else(|| Error::MissingInterval)?;
         if let Some(limit) = limit {
             if limit < interval {
-                return Err(Error::IntervalLargerThanLimit);
+                return Err(Error::IntervalLargerThanLimit { limit, interval });
             }
         }
         Ok(Ticker { limit, interval })
@@ -53,7 +53,7 @@ impl TickerBuilder {
 #[derive(Debug)]
 pub enum Error {
     MissingInterval,
-    IntervalLargerThanLimit,
+    IntervalLargerThanLimit { limit: Duration, interval: Duration },
 }
 
 pub mod iter {
