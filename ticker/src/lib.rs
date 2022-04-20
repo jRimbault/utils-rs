@@ -56,7 +56,11 @@ pub type Result<T> = core::result::Result<T, Error>;
 /// # }
 /// ```
 pub fn ticker(interval: Duration) -> iter::IntoIter {
-    iter::IntoIter::new(interval)
+    Ticker::builder()
+        .interval(interval)
+        .build()
+        .unwrap()
+        .into_iter()
 }
 
 #[derive(Debug)]
@@ -66,11 +70,15 @@ pub struct Ticker {
 }
 
 impl Ticker {
+    /// Helper to safely build a [`Ticker`].
+    ///
+    /// See [`TickerBuilder`]'s documentation.
     pub fn builder() -> TickerBuilder {
         TickerBuilder::new()
     }
 }
 
+/// Helper to safely build a [`Ticker`].
 #[derive(Debug)]
 pub struct TickerBuilder {
     limit: Option<Duration>,
@@ -85,19 +93,25 @@ impl TickerBuilder {
         }
     }
 
-    pub fn interval(mut self, interval: Duration) -> Self {
+    /// *Mandatory*: sets the interval of the ticker.
+    pub fn interval(mut self, interval: Duration) -> TickerBuilder {
         self.interval = Some(interval);
         self
     }
 
-    pub fn limit(mut self, limit: Duration) -> Self {
+    /// *Optional*: sets a time limit on the ticker.
+    pub fn limit(mut self, limit: Duration) -> TickerBuilder {
         self.limit = Some(limit);
         self
     }
 
-    pub fn build(self) -> Result<Ticker> {
+    /// Check the configuration and builds the [`Ticker`] or an [`Error`].
+    pub fn build(self) -> core::result::Result<Ticker, Error> {
         let TickerBuilder { limit, interval } = self;
         let interval = interval.ok_or(Error::MissingInterval)?;
+        if interval.is_zero() {
+            return Err(Error::IntervalIsZero);
+        }
         if let Some(limit) = limit {
             if limit < interval {
                 return Err(Error::IntervalLargerThanLimit { limit, interval });
@@ -107,10 +121,13 @@ impl TickerBuilder {
     }
 }
 
+/// Invalid [`Ticker`] configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("missing interval")]
     MissingInterval,
+    #[error("interval can't be zero")]
+    IntervalIsZero,
     #[error("interval ({interval:?}) should be smaller than the limit ({limit:?})")]
     IntervalLargerThanLimit { interval: Duration, limit: Duration },
 }
@@ -126,16 +143,6 @@ pub mod iter {
         start: Instant,
         limit: Option<Duration>,
         ticker: crossbeam_channel::IntoIter<Instant>,
-    }
-
-    impl IntoIter {
-        pub(crate) fn new(interval: Duration) -> IntoIter {
-            IntoIter {
-                start: Instant::now(),
-                limit: None,
-                ticker: crossbeam_channel::tick(interval).into_iter(),
-            }
-        }
     }
 
     impl IntoIterator for Ticker {
