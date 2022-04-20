@@ -9,7 +9,7 @@ clap = { version = "3.1.6", features = ["derive"] }
 bitvec = "1.0.0"
 conv = "0.3.3"
 chrono = "0.4.19"
-crossbeam = "0.8.1"
+crossbeam-channel = "0.5.4"
 indexmap = "1.8.1"
 rayon = "1.5.2"
 ticker = { path = "../ticker" }

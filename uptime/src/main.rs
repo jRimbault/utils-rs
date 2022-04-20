@@ -4,7 +4,7 @@ mod wrappers;
 use args::{Args, Timings};
 use chrono::SecondsFormat;
 use clap::Parser;
-use crossbeam::channel;
+use crossbeam_channel as channel;
 use indexmap::IndexMap;
 use std::{
     io::{self, Write},
