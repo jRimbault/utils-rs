@@ -36,3 +36,13 @@ fn tick_around_10_times() -> ticker::Result<()> {
     assert!(ticks >= 9);
     Ok(())
 }
+
+#[test]
+fn tick_exactly_10_times() -> ticker::Result<()> {
+    let ticker = Ticker::builder()
+        .interval(Duration::from_millis(20))
+        .build()?;
+    let ticks = ticker.into_iter().take(10).count();
+    assert_eq!(ticks, 10);
+    Ok(())
+}
