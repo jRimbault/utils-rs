@@ -22,7 +22,7 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("there should be at least 1 address here"))?;
     rayon::scope(|scope| {
         let (progress_tx, progress_rx) = channel::bounded(0);
-        scope.spawn(move |_| report(progress_rx, timings));
+        scope.spawn(move |_| report(progress_rx, timings.intervals()));
         let mut map = IndexMap::new();
         loop {
             let start = chrono::Utc::now();
@@ -99,8 +99,8 @@ fn count_results<T, E>(
     Ok(())
 }
 
-fn report(progress_rx: channel::Receiver<Option<bool>>, timings: Timings) {
-    let mut rolling = RollingStats::with_capacity(timings.intervals());
+fn report(progress_rx: channel::Receiver<Option<bool>>, intervals: usize) {
+    let mut rolling = RollingStats::with_capacity(intervals);
     loop {
         for (i, result) in progress_rx
             .clone()
