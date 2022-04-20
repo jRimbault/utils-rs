@@ -9,7 +9,6 @@ use indexmap::IndexMap;
 use std::{
     io::{self, Write},
     net::{SocketAddr, TcpStream, ToSocketAddrs},
-    time::Instant,
 };
 use wrappers::{RollingStats, Stats};
 
