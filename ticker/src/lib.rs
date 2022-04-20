@@ -21,7 +21,7 @@
 //! # }
 //! ```
 //!
-//! Build [`Ticker`] without a time limit:
+//! Building [`Ticker`] without a time limit:
 //!
 //! ```
 //! # use std::time::Duration;
