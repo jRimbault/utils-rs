@@ -6,4 +6,5 @@ members = [
     "word-freq",
     "uptime",
     "uptime/config",
+    "ticker",
 ]
