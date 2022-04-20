@@ -23,11 +23,12 @@ fn main() -> anyhow::Result<()> {
             let start = chrono::Utc::now();
             let results = poll(scope, args.address, timings, progress_tx.clone())?;
             println!(
-                "{}: {:>6.2}% [{}/{} tests]",
+                "{}: {} {:>6.2}% [{}/{} tests]",
                 start.to_rfc3339_opts(SecondsFormat::Secs, true),
+                args.address,
                 results.success_rate()?,
                 results.successes(),
-                results.len()
+                results.len(),
             );
             map.insert(start, results);
         }
