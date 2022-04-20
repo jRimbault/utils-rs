@@ -1,15 +1,12 @@
 use clap::Parser;
-use std::{net::IpAddr, num::NonZeroU16, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 /// Get a running uptime
 #[derive(Parser, Debug)]
 #[clap(author, version)]
 pub struct Args {
-    /// server to poll
-    pub ip_address: IpAddr,
-    /// port to poll 1-65536
-    #[clap(default_value_t = unsafe { NonZeroU16::new_unchecked(80) })]
-    pub port: NonZeroU16,
+    /// address to poll (127.0.0.1:80)
+    pub address: SocketAddr,
     #[clap(flatten)]
     pub timings: ArgsTimings,
 }

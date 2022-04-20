@@ -8,24 +8,20 @@ use crossbeam_channel as channel;
 use indexmap::IndexMap;
 use std::{
     io::{self, Write},
-    net::{SocketAddr, TcpStream, ToSocketAddrs},
+    net::{SocketAddr, TcpStream},
 };
 use wrappers::{RollingStats, Stats};
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let timings = args.timings.to_duration();
-    let address = (args.ip_address, args.port.get())
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("there should be at least 1 address here"))?;
     rayon::scope(|scope| {
         let (progress_tx, progress_rx) = channel::bounded(0);
         scope.spawn(move |_| report(progress_rx, timings.intervals()));
         let mut map = IndexMap::new();
         loop {
             let start = chrono::Utc::now();
-            let results = poll(scope, address, timings, progress_tx.clone())?;
+            let results = poll(scope, args.address, timings, progress_tx.clone())?;
             println!(
                 "{}: {:>6.2}% [{}/{} tests]",
                 start.to_rfc3339_opts(SecondsFormat::Secs, true),
