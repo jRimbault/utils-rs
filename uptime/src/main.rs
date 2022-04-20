@@ -11,7 +11,7 @@ use std::{
     net::{SocketAddr, TcpStream, ToSocketAddrs},
     time::Instant,
 };
-use wrappers::{Percent, Stats};
+use wrappers::{RollingStats, Stats};
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -22,7 +22,7 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("there should be at least 1 address here"))?;
     rayon::scope(|scope| {
         let (progress_tx, progress_rx) = channel::bounded(0);
-        scope.spawn(move |_| report(progress_rx));
+        scope.spawn(move |_| report(progress_rx, timings));
         let mut map = IndexMap::new();
         loop {
             let start = chrono::Utc::now();
@@ -30,7 +30,7 @@ fn main() -> anyhow::Result<()> {
             println!(
                 "{}: {:>6.2}% [{}/{} tests]",
                 start.to_rfc3339_opts(SecondsFormat::Secs, true),
-                results.uptime_rate()?,
+                results.success_rate()?,
                 results.successes(),
                 results.len()
             );
@@ -43,7 +43,7 @@ fn poll(
     scope: &rayon::Scope,
     address: SocketAddr,
     timings: Timings,
-    progress_tx: channel::Sender<Option<Percent>>,
+    progress_tx: channel::Sender<Option<bool>>,
 ) -> anyhow::Result<Stats> {
     let (poll_tx, poll_rx) = channel::bounded(0);
     let (stats_tx, stats_rx) = channel::bounded(0);
@@ -83,7 +83,7 @@ fn try_connect(
 
 fn count_results<T, E>(
     results_rx: channel::Receiver<Result<T, E>>,
-    progress_tx: channel::Sender<Option<Percent>>,
+    progress_tx: channel::Sender<Option<bool>>,
     stats_tx: channel::Sender<Stats>,
 ) -> anyhow::Result<()> {
     let mut list = Stats::new();
@@ -92,23 +92,30 @@ fn count_results<T, E>(
             Ok(_) => list.add_success(),
             Err(_) => list.add_failure(),
         }
-        progress_tx.send(Some(list.uptime_rate()?))?;
+        progress_tx.send(Some(result.is_ok()))?;
     }
     progress_tx.send(None)?;
     stats_tx.send(list)?;
     Ok(())
 }
 
-fn report(progress_rx: channel::Receiver<Option<Percent>>) {
+fn report(progress_rx: channel::Receiver<Option<bool>>, timings: Timings) {
+    let mut rolling = RollingStats::with_capacity(timings.intervals());
     loop {
-        for (i, uptime) in progress_rx
+        for (i, result) in progress_rx
             .clone()
             .into_iter()
             .take_while(Option::is_some)
             .flatten()
             .enumerate()
         {
-            eprint!("{:>7} {uptime:>6.2}%\r", i + 1);
+            rolling.add(result);
+            eprint!(
+                "{:>7} {:>6.2}% [{}]\r",
+                i + 1,
+                rolling.success_rate().unwrap(),
+                rolling.len()
+            );
             io::stderr().flush().unwrap();
         }
         eprint!("             \r");

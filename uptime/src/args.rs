@@ -1,6 +1,5 @@
-use std::{net::IpAddr, num::NonZeroU16, time::Duration};
-
 use clap::Parser;
+use std::{net::IpAddr, num::NonZeroU16, time::Duration};
 
 /// Get a running uptime
 #[derive(Parser, Debug)]
@@ -48,6 +47,11 @@ impl Timings {
         self.interval
             .max(Timings::MIN_TIMEOUT)
             .min(Timings::MAX_TIMEOUT)
+    }
+
+    pub fn intervals(self) -> usize {
+        let r = self.period.as_nanos() / self.interval.as_nanos();
+        r as usize
     }
 }
 
