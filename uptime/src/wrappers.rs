@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use bitvec::vec::BitVec;
 use conv::ValueFrom;
 
