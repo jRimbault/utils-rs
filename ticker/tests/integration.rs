@@ -22,7 +22,7 @@ fn interval_bigger_than_limit() {
         .build();
     assert!(ticker.is_err());
     let error = ticker.unwrap_err();
-    assert!(matches!(error, Error::IntervalLargerThanLimit));
+    assert!(matches!(error, Error::IntervalLargerThanLimit { .. }));
 }
 
 #[test]
