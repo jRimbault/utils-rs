@@ -65,7 +65,7 @@ pub mod iter {
     pub struct IntoIter {
         start: Instant,
         limit: Option<Duration>,
-        ticker: crossbeam::channel::IntoIter<Instant>,
+        ticker: crossbeam_channel::IntoIter<Instant>,
     }
 
     impl IntoIterator for Ticker {
@@ -77,7 +77,7 @@ pub mod iter {
             IntoIter {
                 limit,
                 start: Instant::now(),
-                ticker: crossbeam::channel::tick(interval).into_iter(),
+                ticker: crossbeam_channel::tick(interval).into_iter(),
             }
         }
     }
