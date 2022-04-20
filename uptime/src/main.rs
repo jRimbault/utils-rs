@@ -51,7 +51,10 @@ fn poll(
             eprintln!("{error}");
         }
     });
-    let ticker = timer(timings)?;
+    let ticker = ticker::Ticker::builder()
+        .limit(timings.period)
+        .interval(timings.interval)
+        .build()?;
     for _ in ticker {
         let poll_tx = poll_tx.clone();
         scope.spawn(move |_| {
@@ -62,13 +65,6 @@ fn poll(
     }
     drop(poll_tx);
     Ok(stats_rx.recv()?)
-}
-
-fn timer(timings: Timings) -> Result<ticker::Ticker, ticker::Error> {
-    ticker::Ticker::builder()
-        .limit(timings.period)
-        .interval(timings.interval)
-        .build()
 }
 
 fn try_connect(
