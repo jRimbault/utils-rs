@@ -40,7 +40,7 @@ impl TickerBuilder {
 
     pub fn build(self) -> Result<Ticker> {
         let TickerBuilder { limit, interval } = self;
-        let interval = interval.ok_or_else(|| Error::MissingInterval)?;
+        let interval = interval.ok_or(Error::MissingInterval)?;
         if let Some(limit) = limit {
             if limit < interval {
                 return Err(Error::IntervalLargerThanLimit { limit, interval });
