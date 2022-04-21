@@ -1,13 +1,10 @@
 [foo]
-host = "127.0.0.1"
-ports = [1, 2]
+servers = ["127.0.0.1:1", "127.0.0.1:2"]
 interval = 10
 
 [bar]
-host = "0.0.0.0"
-ports = [80, 443, 4444]
+servers = ["0.0.0.0:80", "0.0.0.0:443", "0.0.0.0:4444"]
 period = 10
 
-[quz]
-host = "quz.com"
-ports = [80]
+#[quz]
+#servers = ["quz.com:80"]
