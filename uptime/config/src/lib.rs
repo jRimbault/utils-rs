@@ -16,11 +16,11 @@ pub enum Host {
 #[derive(Debug, Deserialize, Clone)]
 pub struct Server {
     pub servers: Vec<SocketAddr>,
+    #[serde(default)]
     #[serde_as(as = "Option<serde_with::DurationMilliSeconds<u64>>")]
-    #[serde(default)]
     pub interval: Option<Duration>,
-    #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub period: Option<Duration>,
 }
 
