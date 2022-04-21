@@ -80,11 +80,9 @@ fn count_results<T, E>(
 ) -> anyhow::Result<()> {
     let mut list = Stats::new();
     for result in results_rx {
-        match result {
-            Ok(_) => list.add_success(),
-            Err(_) => list.add_failure(),
-        }
-        progress_tx.send(Some(result.is_ok()))?;
+        let result = result.is_ok();
+        list.add(result);
+        progress_tx.send(Some(result))?;
     }
     progress_tx.send(None)?;
     stats_tx.send(list)?;

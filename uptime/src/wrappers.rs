@@ -12,11 +12,8 @@ impl Stats {
     pub fn new() -> Stats {
         Stats(BitVec::new())
     }
-    pub fn add_success(&mut self) {
-        self.0.push(true)
-    }
-    pub fn add_failure(&mut self) {
-        self.0.push(false)
+    pub fn add(&mut self, value: bool) {
+        self.0.push(value)
     }
     pub fn success_rate(&self) -> Result<Percent, conv::GeneralErrorKind> {
         success_rate(self.0.count_ones(), self.0.len())
