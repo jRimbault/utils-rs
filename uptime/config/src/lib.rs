@@ -1,21 +1,17 @@
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
-pub enum Host {
-    Address(IpAddr),
-    Hostname(String),
+pub enum Address {
+    Direct(SocketAddr),
+    Dns(String),
 }
 
 #[serde_with::serde_as]
 #[derive(Debug, Deserialize, Clone)]
 pub struct Server {
-    pub servers: Vec<SocketAddr>,
+    pub servers: Vec<Address>,
     #[serde(default)]
     #[serde_as(as = "Option<serde_with::DurationMilliSeconds<u64>>")]
     pub interval: Option<Duration>,
