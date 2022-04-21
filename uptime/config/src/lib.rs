@@ -1,5 +1,6 @@
+use indexmap::IndexMap;
 use serde::Deserialize;
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
@@ -23,5 +24,5 @@ pub struct Server {
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     #[serde(flatten)]
-    pub servers: HashMap<String, Server>,
+    pub servers: IndexMap<String, Server>,
 }
