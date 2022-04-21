@@ -1,8 +1,11 @@
-[foo]
+[servers]
+baz = { servers = ["10.243.0.1:7878"], interval = 100 }
+
+[servers.foo]
 servers = ["127.0.0.1:1", "127.0.0.1:2"]
 interval = 10
 
-[bar]
+[servers.bar]
 servers = [
     "0.0.0.0:80",
     "0.0.0.0:443",
@@ -10,5 +13,5 @@ servers = [
 ]
 period = 10
 
-[quz]
+[servers.quz]
 servers = ["quz.com:80"]

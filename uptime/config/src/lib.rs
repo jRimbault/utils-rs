@@ -23,6 +23,5 @@ pub struct Server {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
-    #[serde(flatten)]
     pub servers: IndexMap<String, Server>,
 }
