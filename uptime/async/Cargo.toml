@@ -1,0 +1,16 @@
+[package]
+name = "uptime_async"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.52"
+clap = { version = "3.1.6", features = ["derive"] }
+bitvec = "1.0.0"
+conv = "0.3.3"
+chrono = "0.4.19"
+indexmap = "1.8.1"
+
+[dependencies.tokio]
+version = "1.0.0"
+features = ["macros", "net", "time"]

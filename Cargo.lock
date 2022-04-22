@@ -1731,6 +1731,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "uptime_async"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitvec",
+ "chrono",
+ "clap",
+ "conv",
+ "indexmap",
+ "tokio",
+]
+
+[[package]]
 name = "uptime_config"
 version = "0.1.0"
 dependencies = [
