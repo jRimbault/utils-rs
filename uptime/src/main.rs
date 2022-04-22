@@ -7,8 +7,7 @@ use chrono::SecondsFormat;
 use clap::Parser;
 use indexmap::IndexMap;
 use std::{io::Write, net::SocketAddr};
-use tokio::sync;
-use tokio::{net::TcpStream, time::Instant};
+use tokio::{net::TcpStream, sync, time::Instant};
 use wrappers::{RollingStats, Stats};
 
 #[tokio::main(flavor = "current_thread")]
@@ -64,7 +63,7 @@ async fn poll(
         });
     }
     drop(poll_tx);
-    stats_rx.await.context("didn't receive a final report")
+    stats_rx.await.context("didn't receive the periodic report")
 }
 
 async fn try_connect(
@@ -97,7 +96,9 @@ async fn count_results<T, E>(
             .context("sending intermediate progress")?;
     }
     progress_tx.send(None).await?;
-    let _ = stats_tx.send(list);
+    stats_tx
+        .send(list)
+        .expect("couldn't send the periodic results");
     Ok(())
 }
 
