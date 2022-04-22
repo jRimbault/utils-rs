@@ -12,4 +12,3 @@ chrono = "0.4.19"
 crossbeam-channel = "0.5.4"
 indexmap = "1.8.1"
 rayon = "1.5.2"
-ticker = { path = "../ticker" }
