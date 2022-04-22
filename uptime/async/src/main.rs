@@ -11,7 +11,7 @@ use tokio::sync::mpsc as channel;
 use tokio::{net::TcpStream, time::Instant};
 use wrappers::{RollingStats, Stats};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let timings = args.timings.to_duration();
