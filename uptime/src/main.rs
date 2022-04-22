@@ -98,7 +98,7 @@ async fn count_results<T, E>(
     progress_tx.send(None).await?;
     stats_tx
         .send(list)
-        .expect("couldn't send the periodic results");
+        .map_err(|_| anyhow::anyhow!("couldn't send the periodic results"))?;
     Ok(())
 }
 
