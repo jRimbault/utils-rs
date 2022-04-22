@@ -1,139 +1,134 @@
 mod args;
 mod wrappers;
 
+use anyhow::Context;
 use args::{Args, Timings};
 use chrono::SecondsFormat;
 use clap::Parser;
-use crossbeam_channel as channel;
 use indexmap::IndexMap;
-use rayon::iter::{ParallelBridge, ParallelIterator};
-use std::{
-    io::{self, Write},
-    net::{SocketAddr, TcpStream},
-    time::Instant,
-};
+use std::{io::Write, net::SocketAddr};
+use tokio::sync::mpsc as channel;
+use tokio::{net::TcpStream, time::Instant};
 use wrappers::{RollingStats, Stats};
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let timings = args.timings.to_duration();
-    rayon::scope(|scope| {
-        let (progress_tx, progress_rx) = channel::bounded(0);
-        scope.spawn(move |_| report(progress_rx, timings.intervals()));
-        let mut map = IndexMap::new();
-        loop {
-            let start = chrono::Utc::now();
-            let results = poll(scope, args.address, timings, progress_tx.clone())?;
-            println!(
-                "{}: {} {:>6.2}% [{}/{} tests]",
-                start.to_rfc3339_opts(SecondsFormat::Secs, true),
-                args.address,
-                results.success_rate()?,
-                results.successes(),
-                results.len(),
-            );
-            map.insert(start, results);
+    let (progress_tx, progress_rx) = tokio::sync::mpsc::channel(1);
+    tokio::spawn(async move {
+        if let Err(error) = report(progress_rx, timings.intervals()).await {
+            eprintln!("Error while reporting results: {error}");
         }
-    })
+    });
+    let mut map = IndexMap::new();
+    loop {
+        let start = chrono::Utc::now();
+        let results = poll(args.address, timings, progress_tx.clone()).await?;
+        println!(
+            "{}: {} {:>6.2}% [{}/{} tests]",
+            start.to_rfc3339_opts(SecondsFormat::Secs, true),
+            args.address,
+            results.success_rate()?,
+            results.successes(),
+            results.len(),
+        );
+        map.insert(start, results);
+    }
 }
 
-fn poll(
-    scope: &rayon::Scope,
+async fn poll(
     address: SocketAddr,
     timings: Timings,
     progress_tx: channel::Sender<Option<bool>>,
 ) -> anyhow::Result<Stats> {
-    let (poll_tx, poll_rx) = channel::bounded(0);
-    let (stats_tx, stats_rx) = channel::bounded(0);
-    scope.spawn(move |_| {
-        if let Err(error) = count_results(poll_rx, progress_tx, stats_tx) {
-            eprintln!("{error}");
+    let (poll_tx, poll_rx) = tokio::sync::mpsc::channel(1);
+    let (stats_tx, mut stats_rx) = tokio::sync::mpsc::channel(1);
+    tokio::spawn(async move {
+        if let Err(error) = count_results(poll_rx, progress_tx, stats_tx).await {
+            eprintln!("Error while counting results: {error}");
         }
     });
-    timer(timings)
-        .par_bridge()
-        .for_each_with(poll_tx, |poll_tx, _| {
-            if let Err(error) = try_connect(poll_tx, address, timings) {
-                eprintln!("{error}");
+    let mut ticker = tokio::time::interval(timings.interval);
+    let start = Instant::now();
+    for _ in 0.. {
+        ticker.tick().await;
+        if start.elapsed() > timings.period {
+            break;
+        }
+        let poll_tx = poll_tx.clone();
+        tokio::spawn(async move {
+            if let Err(error) = try_connect(poll_tx, address, timings).await {
+                eprintln!("Error while trying to poll: {error}");
             }
         });
-    Ok(stats_rx.recv()?)
+    }
+    drop(poll_tx);
+    Ok(stats_rx
+        .recv()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("didn't receive a final report"))?)
 }
 
-fn timer(timings: Timings) -> impl Iterator<Item = Instant> {
-    let start = Instant::now();
-    std::iter::once(start)
-        .chain(channel::tick(timings.interval))
-        .take_while(move |_| start.elapsed() < timings.period)
-}
-
-fn try_connect(
-    poll_tx: &mut channel::Sender<Result<TcpStream, io::Error>>,
+async fn try_connect(
+    poll_tx: channel::Sender<Result<(), ()>>,
     address: std::net::SocketAddr,
     timings: Timings,
 ) -> anyhow::Result<()> {
-    poll_tx.send(TcpStream::connect_timeout(&address, timings.timeout()))?;
+    let timeout = timings.timeout();
+    let result = tokio::time::timeout(timeout, TcpStream::connect(&address)).await;
+    match result {
+        Ok(Ok(_)) => poll_tx.send(Ok(())).await?,
+        Ok(Err(_)) => poll_tx.send(Err(())).await?,
+        Err(_) => poll_tx.send(Err(())).await?,
+    }
     Ok(())
 }
 
-fn count_results<T, E>(
-    results_rx: channel::Receiver<Result<T, E>>,
+async fn count_results<T, E>(
+    mut results_rx: channel::Receiver<Result<T, E>>,
     progress_tx: channel::Sender<Option<bool>>,
     stats_tx: channel::Sender<Stats>,
 ) -> anyhow::Result<()> {
     let mut list = Stats::new();
-    for result in results_rx {
-        let result = result.is_ok();
-        list.add(result);
-        progress_tx.send(Some(result))?;
+    for _ in 0.. {
+        if let Some(result) = results_rx.recv().await {
+            let result = result.is_ok();
+            list.add(result);
+            progress_tx
+                .send(Some(result))
+                .await
+                .context("sending intermediate progress")?;
+        } else {
+            break;
+        }
     }
-    progress_tx.send(None)?;
-    stats_tx.send(list)?;
+    progress_tx.send(None).await?;
+    stats_tx.send(list).await?;
     Ok(())
 }
 
-fn report(progress_rx: channel::Receiver<Option<bool>>, intervals: usize) {
+async fn report(
+    mut progress_rx: channel::Receiver<Option<bool>>,
+    intervals: usize,
+) -> anyhow::Result<()> {
     let mut rolling = RollingStats::with_capacity(intervals);
+    let mut stderr = std::io::stderr();
     loop {
-        for (i, result) in progress_rx
-            .clone()
-            .into_iter()
-            .take_while(Option::is_some)
-            .flatten()
-            .enumerate()
-        {
+        for i in 1.. {
+            let result = progress_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("waiting on intermediate progress"))?;
+            let result = match result {
+                Some(r) => r,
+                None => break,
+            };
             rolling.add(result);
-            eprint!("{:>7} {:>6.2}%\r", i + 1, rolling.success_rate().unwrap());
-            io::stderr().flush().unwrap();
+            eprint!("{:>7} {:>6.2}%\r", i, rolling.success_rate()?);
+            stderr.flush()?;
         }
         eprint!("             \r");
-        io::stderr().flush().unwrap();
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::{channel, count_results};
-
-    #[test]
-    fn result_counting() -> anyhow::Result<()> {
-        let stats = rayon::scope(|scope| {
-            let (progress_tx, progress_rx) = channel::unbounded();
-            let (results_tx, results_rx) = channel::unbounded();
-            let (stats_tx, stats_rx) = channel::unbounded();
-            scope.spawn(move |_| progress_rx.into_iter().for_each(|_i| ()));
-            scope.spawn(move |_| {
-                let _ = count_results(results_rx, progress_tx, stats_tx);
-            });
-            for i in 0..10 {
-                results_tx.send(Ok(i)).unwrap();
-                results_tx.send(Err(i)).unwrap();
-            }
-            drop(results_tx);
-            stats_rx.recv()
-        })?;
-        assert_eq!(stats.len(), 20);
-        assert_eq!(stats.successes(), 10);
-        Ok(())
+        stderr.flush()?;
     }
 }

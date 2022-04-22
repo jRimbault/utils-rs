@@ -1725,20 +1725,6 @@ dependencies = [
  "chrono",
  "clap",
  "conv",
- "crossbeam-channel",
- "indexmap",
- "rayon",
-]
-
-[[package]]
-name = "uptime_async"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitvec",
- "chrono",
- "clap",
- "conv",
  "indexmap",
  "tokio",
 ]
