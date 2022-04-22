@@ -6,6 +6,7 @@ use chrono::SecondsFormat;
 use clap::Parser;
 use crossbeam_channel as channel;
 use indexmap::IndexMap;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::{
     io::{self, Write},
     net::{SocketAddr, TcpStream},
@@ -49,15 +50,13 @@ fn poll(
             eprintln!("{error}");
         }
     });
-    for _ in timer(timings) {
-        let poll_tx = poll_tx.clone();
-        scope.spawn(move |_| {
+    timer(timings)
+        .par_bridge()
+        .for_each_with(poll_tx, |poll_tx, _| {
             if let Err(error) = try_connect(poll_tx, address, timings) {
                 eprintln!("{error}");
             }
         });
-    }
-    drop(poll_tx);
     Ok(stats_rx.recv()?)
 }
 
@@ -69,7 +68,7 @@ fn timer(timings: Timings) -> impl Iterator<Item = Instant> {
 }
 
 fn try_connect(
-    poll_tx: channel::Sender<Result<TcpStream, io::Error>>,
+    poll_tx: &mut channel::Sender<Result<TcpStream, io::Error>>,
     address: std::net::SocketAddr,
     timings: Timings,
 ) -> anyhow::Result<()> {
