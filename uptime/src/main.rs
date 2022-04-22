@@ -7,7 +7,7 @@ use chrono::SecondsFormat;
 use clap::Parser;
 use indexmap::IndexMap;
 use std::{io::Write, net::SocketAddr};
-use tokio::sync::mpsc as channel;
+use tokio::sync;
 use tokio::{net::TcpStream, time::Instant};
 use wrappers::{RollingStats, Stats};
 
@@ -40,10 +40,10 @@ async fn main() -> anyhow::Result<()> {
 async fn poll(
     address: SocketAddr,
     timings: Timings,
-    progress_tx: channel::Sender<Option<bool>>,
+    progress_tx: sync::mpsc::Sender<Option<bool>>,
 ) -> anyhow::Result<Stats> {
     let (poll_tx, poll_rx) = tokio::sync::mpsc::channel(1);
-    let (stats_tx, mut stats_rx) = tokio::sync::mpsc::channel(1);
+    let (stats_tx, stats_rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         if let Err(error) = count_results(poll_rx, progress_tx, stats_tx).await {
             eprintln!("Error while counting results: {error}");
@@ -51,7 +51,7 @@ async fn poll(
     });
     let mut ticker = tokio::time::interval(timings.interval);
     let start = Instant::now();
-    for _ in 0.. {
+    loop {
         ticker.tick().await;
         if start.elapsed() > timings.period {
             break;
@@ -64,14 +64,11 @@ async fn poll(
         });
     }
     drop(poll_tx);
-    Ok(stats_rx
-        .recv()
-        .await
-        .ok_or_else(|| anyhow::anyhow!("didn't receive a final report"))?)
+    stats_rx.await.context("didn't receive a final report")
 }
 
 async fn try_connect(
-    poll_tx: channel::Sender<Result<(), ()>>,
+    poll_tx: sync::mpsc::Sender<Result<(), ()>>,
     address: std::net::SocketAddr,
     timings: Timings,
 ) -> anyhow::Result<()> {
@@ -86,47 +83,40 @@ async fn try_connect(
 }
 
 async fn count_results<T, E>(
-    mut results_rx: channel::Receiver<Result<T, E>>,
-    progress_tx: channel::Sender<Option<bool>>,
-    stats_tx: channel::Sender<Stats>,
+    mut results_rx: sync::mpsc::Receiver<Result<T, E>>,
+    progress_tx: sync::mpsc::Sender<Option<bool>>,
+    stats_tx: sync::oneshot::Sender<Stats>,
 ) -> anyhow::Result<()> {
     let mut list = Stats::new();
-    for _ in 0.. {
-        if let Some(result) = results_rx.recv().await {
-            let result = result.is_ok();
-            list.add(result);
-            progress_tx
-                .send(Some(result))
-                .await
-                .context("sending intermediate progress")?;
-        } else {
-            break;
-        }
+    while let Some(result) = results_rx.recv().await {
+        let result = result.is_ok();
+        list.add(result);
+        progress_tx
+            .send(Some(result))
+            .await
+            .context("sending intermediate progress")?;
     }
     progress_tx.send(None).await?;
-    stats_tx.send(list).await?;
+    let _ = stats_tx.send(list);
     Ok(())
 }
 
 async fn report(
-    mut progress_rx: channel::Receiver<Option<bool>>,
+    mut progress_rx: sync::mpsc::Receiver<Option<bool>>,
     intervals: usize,
 ) -> anyhow::Result<()> {
     let mut rolling = RollingStats::with_capacity(intervals);
     let mut stderr = std::io::stderr();
     loop {
-        for i in 1.. {
-            let result = progress_rx
-                .recv()
-                .await
-                .ok_or_else(|| anyhow::anyhow!("waiting on intermediate progress"))?;
-            let result = match result {
-                Some(r) => r,
+        let mut i = 1;
+        while let Some(result) = progress_rx.recv().await {
+            match result {
+                Some(r) => rolling.add(r),
                 None => break,
-            };
-            rolling.add(result);
+            }
             eprint!("{:>7} {:>6.2}%\r", i, rolling.success_rate()?);
             stderr.flush()?;
+            i += 1;
         }
         eprint!("             \r");
         stderr.flush()?;
