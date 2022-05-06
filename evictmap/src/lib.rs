@@ -30,12 +30,12 @@ impl EvictMap {
 
     pub fn remove(&mut self, hostname: &str, number: usize) -> Option<()> {
         let bucket = self.map.get_mut(hostname)?;
-        if !bucket.allocated.contains(&number) {
-            return None;
+        if bucket.allocated.remove(&number) {
+            bucket.deallocated.push(number);
+            Some(())
+        } else {
+            None
         }
-        bucket.allocated.remove(&number);
-        bucket.deallocated.push(number);
-        Some(())
     }
 }
 
