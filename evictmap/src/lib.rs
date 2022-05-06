@@ -1,5 +1,4 @@
 mod bucket;
-mod minheap;
 
 use std::collections::HashMap;
 

@@ -1,10 +1,11 @@
-use super::minheap::MinHeap;
+mod minheap;
+
 use std::collections::BTreeSet;
 
 #[derive(Debug, Default)]
 pub struct Bucket {
     allocated: BTreeSet<usize>,
-    deallocated: MinHeap<usize>,
+    deallocated: minheap::MinHeap<usize>,
 }
 
 impl Bucket {
