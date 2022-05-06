@@ -17,7 +17,7 @@ enum Ip {
 fn main() -> anyhow::Result<()> {
     let ip = Ip::parse();
     let address = ip.get().context("getting your IP address")?;
-    println!("{address:?}");
+    println!("{address}");
     Ok(())
 }
 
