@@ -17,9 +17,11 @@ pub struct Node<T> {
 impl<K> EvictMap<K>
 where
     K: core::hash::Hash + Eq,
-    K: Clone,
 {
-    pub fn add(&mut self, value: K) -> Node<K> {
+    pub fn add(&mut self, value: K) -> Node<K>
+    where
+        K: Clone,
+    {
         let number = self.map.entry(value.clone()).or_default().add_one();
         Node { value, number }
     }
