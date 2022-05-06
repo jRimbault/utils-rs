@@ -8,4 +8,5 @@ members = [
     "uptime/config",
     "ticker",
     "ip",
+    "evictmap",
 ]

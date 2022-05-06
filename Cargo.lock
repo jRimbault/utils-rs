@@ -283,6 +283,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "evictmap"
+version = "0.1.0"
+
+[[package]]
 name = "fastrand"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
