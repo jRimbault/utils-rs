@@ -4,31 +4,37 @@ mod minheap;
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
-pub struct EvictMap {
-    map: HashMap<String, bucket::Bucket>,
+pub struct EvictMap<K> {
+    map: HashMap<K, bucket::Bucket>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Node {
-    hostname: String,
+pub struct Node<T> {
+    value: T,
     number: usize,
 }
 
-impl EvictMap {
-    pub fn add(&mut self, hostname: &str) -> Node {
-        let hostname = hostname.to_owned();
-        let number = self.map.entry(hostname.clone()).or_default().add_one();
-        Node { hostname, number }
+impl<K> EvictMap<K>
+where
+    K: core::hash::Hash + Eq,
+    K: Clone,
+{
+    pub fn add(&mut self, value: K) -> Node<K> {
+        let number = self.map.entry(value.clone()).or_default().add_one();
+        Node { value, number }
     }
 
-    pub fn remove(&mut self, hostname: &str, number: usize) -> Option<()> {
-        self.map.get_mut(hostname)?.remove(number)
+    pub fn remove(&mut self, value: K, number: usize) -> Option<()> {
+        self.map.get_mut(&value)?.remove(number)
     }
 }
 
-impl std::fmt::Display for Node {
+impl<T> std::fmt::Display for Node<T>
+where
+    T: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.hostname, self.number)?;
+        write!(f, "{}{}", self.value, self.number)?;
         Ok(())
     }
 }
