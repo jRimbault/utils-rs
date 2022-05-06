@@ -26,8 +26,13 @@ where
         Node { value, number }
     }
 
-    pub fn remove(&mut self, value: K, number: usize) -> Option<()> {
-        self.map.get_mut(&value)?.remove(number)
+    pub fn remove<Q>(&mut self, value: &Q, number: usize) -> Option<()>
+    where
+        Q: ?Sized,
+        K: std::borrow::Borrow<Q>,
+        Q: core::hash::Hash + Eq,
+    {
+        self.map.get_mut(value)?.remove(number)
     }
 }
 
