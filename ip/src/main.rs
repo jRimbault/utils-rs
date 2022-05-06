@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Parser;
 use std::net::IpAddr;
 
@@ -15,7 +16,7 @@ enum Ip {
 
 fn main() -> anyhow::Result<()> {
     let ip = Ip::parse();
-    let address = ip.get();
+    let address = ip.get().context("getting your IP address")?;
     println!("{address:?}");
     Ok(())
 }
