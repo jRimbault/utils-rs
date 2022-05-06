@@ -1,7 +1,6 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
-#[derive(Default)]
-pub struct MinHeap<T: Ord>(BinaryHeap<Reverse<T>>);
+pub struct MinHeap<T>(BinaryHeap<Reverse<T>>);
 
 impl<T> MinHeap<T>
 where
@@ -25,5 +24,14 @@ where
         f.debug_list()
             .entries(self.0.iter().map(|Reverse(value)| value))
             .finish()
+    }
+}
+
+impl<T> Default for MinHeap<T>
+where
+    T: Ord,
+{
+    fn default() -> Self {
+        MinHeap(Default::default())
     }
 }
