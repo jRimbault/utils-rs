@@ -1,6 +1,7 @@
 mod bucket;
 
-use std::collections::HashMap;
+use core::hash::Hash;
+use std::{borrow::Borrow, collections::HashMap};
 
 #[derive(Debug, Default)]
 pub struct EvictMap<K> {
@@ -15,7 +16,7 @@ pub struct Node<T> {
 
 impl<K> EvictMap<K>
 where
-    K: core::hash::Hash + Eq,
+    K: Hash + Eq,
 {
     pub fn add(&mut self, value: K) -> Node<K>
     where
@@ -28,8 +29,8 @@ where
     pub fn remove<Q>(&mut self, value: &Q, number: usize) -> Option<()>
     where
         Q: ?Sized,
-        K: std::borrow::Borrow<Q>,
-        Q: core::hash::Hash + Eq,
+        K: Borrow<Q>,
+        Q: Hash + Eq,
     {
         self.map.get_mut(value)?.remove(number)
     }
