@@ -12,11 +12,8 @@ impl<K> EvictMap<K>
 where
     K: Hash + Eq,
 {
-    pub fn add(&mut self, value: K) -> usize
-    where
-        K: Clone,
-    {
-        self.map.entry(value.clone()).or_default().add_one()
+    pub fn add(&mut self, value: K) -> usize {
+        self.map.entry(value).or_default().add_one()
     }
 
     pub fn remove<Q>(&mut self, value: &Q, number: usize) -> bool
