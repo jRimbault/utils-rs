@@ -3,7 +3,7 @@ mod bucket;
 use core::hash::Hash;
 use std::{borrow::Borrow, collections::HashMap};
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct EvictMap<K> {
     map: HashMap<K, bucket::Bucket>,
 }
@@ -32,6 +32,15 @@ where
     }
 }
 
+impl<K> std::fmt::Debug for EvictMap<K>
+where
+    K: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(&self.map).finish()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::EvictMap;
@@ -49,5 +58,19 @@ mod test {
         assert_eq!(map.add("apibox"), 0); // get back 0 first
         assert_eq!(map.add("apibox"), 1); // then 1
         println!("{map:#?}");
+    }
+
+    #[test]
+    fn scenario_2() {
+        let mut map = EvictMap::default();
+        for _ in 0..300 {
+            map.add("");
+        }
+        for i in 40..120 {
+            map.remove("", i);
+        }
+        for i in 40..120 {
+            assert_eq!(map.add(""), i);
+        }
     }
 }
