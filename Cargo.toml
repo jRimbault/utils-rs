@@ -7,4 +7,6 @@ members = [
     "uptime",
     "uptime/config",
     "ticker",
+    "ip",
+    "evictmap",
 ]
