@@ -1,15 +1,30 @@
-use std::{
-    fmt,
-    io::{self, Write},
-};
+use std::{fmt, io};
 
 use xml::{reader::ParserConfig, writer::EmitterConfig};
 
 pub struct PrettyXml<'a>(pub &'a [u8]);
 
-pub fn to_writer<W>(writer: &mut W, buf: &[u8]) -> io::Result<usize>
+#[derive(Debug)]
+pub enum Error {
+    Read(xml::reader::Error),
+    Write(xml::writer::Error),
+}
+
+impl From<xml::reader::Error> for Error {
+    fn from(e: xml::reader::Error) -> Self {
+        Error::Read(e)
+    }
+}
+
+impl From<xml::writer::Error> for Error {
+    fn from(e: xml::writer::Error) -> Self {
+        Error::Write(e)
+    }
+}
+
+pub fn to_writer<W>(writer: &mut W, buf: &[u8]) -> Result<usize, Error>
 where
-    W: Write,
+    W: io::Write,
 {
     let reader = ParserConfig::new()
         .trim_whitespace(true)
@@ -21,9 +36,8 @@ where
         .autopad_comments(false)
         .create_writer(writer);
     for event in reader {
-        let event = event.map_err(to_io)?;
-        if let Some(event) = event.as_writer_event() {
-            writer.write(event).map_err(to_io)?;
+        if let Some(event) = event?.as_writer_event() {
+            writer.write(event)?;
         }
     }
     Ok(buf.len())
