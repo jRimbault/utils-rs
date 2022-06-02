@@ -10,12 +10,11 @@ impl fmt::Display for PrettyXml<'_> {
             .trim_whitespace(true)
             .ignore_comments(false)
             .create_reader(self.0);
-        let writer = FmtWriter(f);
         let mut writer = EmitterConfig::new()
             .perform_indent(true)
             .normalize_empty_elements(false)
             .autopad_comments(false)
-            .create_writer(writer);
+            .create_writer(FmtWriter(f));
         for event in reader {
             if let Some(event) = event.map_err(|_| fmt::Error)?.as_writer_event() {
                 writer.write(event).map_err(|_| fmt::Error)?;
