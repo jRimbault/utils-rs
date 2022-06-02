@@ -22,6 +22,21 @@ impl From<xml::writer::Error> for Error {
     }
 }
 
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Read(e) => Some(e),
+            Error::Write(e) => Some(e),
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(std::error::Error::source(&self).unwrap(), f)
+    }
+}
+
 pub fn to_writer<W>(writer: &mut W, buf: &[u8]) -> Result<usize, Error>
 where
     W: io::Write,
