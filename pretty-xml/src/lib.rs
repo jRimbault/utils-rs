@@ -29,12 +29,7 @@ struct FmtWriter<'a, 'b>(&'b mut fmt::Formatter<'a>);
 impl io::Write for FmtWriter<'_, '_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s = std::str::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        if fmt::Write::write_str(&mut self.0, s).is_err() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "couldn't write to formatter",
-            ));
-        }
+        fmt::Write::write_str(self.0, s).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         Ok(buf.len())
     }
     fn flush(&mut self) -> io::Result<()> {
