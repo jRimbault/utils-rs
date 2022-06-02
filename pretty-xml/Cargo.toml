@@ -1,0 +1,7 @@
+[package]
+name = "pretty-xml"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xml-rs = "0.8.4"

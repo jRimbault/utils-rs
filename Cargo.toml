@@ -9,4 +9,5 @@ members = [
     "ticker",
     "ip",
     "evictmap",
+    "pretty-xml",
 ]
