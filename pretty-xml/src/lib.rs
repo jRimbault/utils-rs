@@ -21,7 +21,8 @@ where
         .autopad_comments(false)
         .create_writer(writer);
     for event in reader {
-        if let Some(event) = event.map_err(to_io)?.as_writer_event() {
+        let event = event.map_err(to_io)?;
+        if let Some(event) = event.as_writer_event() {
             writer.write(event).map_err(to_io)?;
         }
     }
