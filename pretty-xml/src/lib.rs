@@ -1,25 +1,36 @@
-use std::{fmt, io};
+use std::{
+    fmt,
+    io::{self, Write},
+};
 
 use xml::{reader::ParserConfig, writer::EmitterConfig};
 
 pub struct PrettyXml<'a>(pub &'a [u8]);
 
+pub fn to_writer<W>(writer: &mut W, buf: &[u8]) -> io::Result<usize>
+where
+    W: Write,
+{
+    let reader = ParserConfig::new()
+        .trim_whitespace(true)
+        .ignore_comments(false)
+        .create_reader(buf);
+    let mut writer = EmitterConfig::new()
+        .perform_indent(true)
+        .normalize_empty_elements(false)
+        .autopad_comments(false)
+        .create_writer(writer);
+    for event in reader {
+        if let Some(event) = event.map_err(to_io)?.as_writer_event() {
+            writer.write(event).map_err(to_io)?;
+        }
+    }
+    Ok(buf.len())
+}
+
 impl fmt::Display for PrettyXml<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let reader = ParserConfig::new()
-            .trim_whitespace(true)
-            .ignore_comments(false)
-            .create_reader(self.0);
-        let mut writer = EmitterConfig::new()
-            .perform_indent(true)
-            .normalize_empty_elements(false)
-            .autopad_comments(false)
-            .create_writer(FmtWriter(f));
-        for event in reader {
-            if let Some(event) = event.map_err(|_| fmt::Error)?.as_writer_event() {
-                writer.write(event).map_err(|_| fmt::Error)?;
-            }
-        }
+        to_writer(&mut FmtWriter(f), self.0).map_err(|_| fmt::Error)?;
         Ok(())
     }
 }
