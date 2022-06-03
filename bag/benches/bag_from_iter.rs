@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkGroup, measurement::WallTime};
 use rand::prelude::SliceRandom;
 
 fn yadf() -> Vec<(u64, String)> {
@@ -21,27 +21,24 @@ fn yadf() -> Vec<(u64, String)> {
     items
 }
 
+fn bench_bag<T>(group: &mut BenchmarkGroup<WallTime>, items: &[(u64, String)])
+where
+    T: FromIterator<(u64, String)>
+{
+    group.bench_function(std::any::type_name::<T>(), |b| {
+        b.iter_with_setup(
+            || items.to_vec(),
+            |items| T::from_iter(black_box(items)),
+        )
+    });
+}
+
 fn bench_bag_from_iter_yadf(c: &mut Criterion) {
     let mut group = c.benchmark_group("FromIterator");
     let items = yadf();
-    group.bench_function("IndexBag", |b| {
-        b.iter_with_setup(
-            || items.clone(),
-            |items| bag::IndexBag::from_iter(black_box(items)),
-        )
-    });
-    group.bench_function("HashBag", |b| {
-        b.iter_with_setup(
-            || items.clone(),
-            |items| bag::HashBag::from_iter(black_box(items)),
-        )
-    });
-    group.bench_function("TreeBag", |b| {
-        b.iter_with_setup(
-            || items.clone(),
-            |items| bag::TreeBag::from_iter(black_box(items)),
-        )
-    });
+    bench_bag::<bag::IndexBag<_, _>>(&mut group, &items);
+    bench_bag::<bag::HashBag<_, _>>(&mut group, &items);
+    bench_bag::<bag::TreeBag<_, _>>(&mut group, &items);
     group.finish();
 }
 
