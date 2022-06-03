@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn yadf() -> Vec<(u64, String)> {
     let paths = vec![std::path::PathBuf::from("..").canonicalize().unwrap()];
