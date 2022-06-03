@@ -23,14 +23,15 @@ fn yadf() -> Vec<(u64, String)> {
 
 fn bench_bag_from_iter_yadf(c: &mut Criterion) {
     let mut group = c.benchmark_group("Bags");
+    let items = yadf();
     group.bench_function("IndexBag::from_iter", |b| {
-        b.iter_with_setup(yadf, |items| bag::IndexBag::from_iter(items))
+        b.iter_with_setup(|| items.clone(), |items| bag::IndexBag::from_iter(items))
     });
     group.bench_function("HashBag::from_iter", |b| {
-        b.iter_with_setup(yadf, |items| bag::HashBag::from_iter(items))
+        b.iter_with_setup(|| items.clone(), |items| bag::HashBag::from_iter(items))
     });
     group.bench_function("TreeBag::from_iter", |b| {
-        b.iter_with_setup(yadf, |items| bag::TreeBag::from_iter(items))
+        b.iter_with_setup(|| items.clone(), |items| bag::TreeBag::from_iter(items))
     });
     group.finish();
 }
