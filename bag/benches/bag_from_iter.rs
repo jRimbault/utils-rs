@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use rand::prelude::SliceRandom;
 
 fn yadf() -> Vec<(u64, String)> {
     let paths = vec![std::path::PathBuf::from("..").canonicalize().unwrap()];
@@ -6,7 +7,7 @@ fn yadf() -> Vec<(u64, String)> {
         .paths(paths)
         .build()
         .scan::<seahash::SeaHasher>();
-    items
+    let mut items: Vec<_> = items
         .into_inner()
         .into_iter()
         .flat_map(|(key, group)| {
@@ -15,7 +16,9 @@ fn yadf() -> Vec<(u64, String)> {
                 .map(|p| (key, format!("{p:?}")))
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect();
+    items.shuffle(&mut rand::thread_rng());
+    items
 }
 
 fn bench_bag_from_iter_yadf(c: &mut Criterion) {
