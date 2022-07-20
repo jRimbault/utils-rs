@@ -15,7 +15,7 @@ enum Ip {
 }
 
 fn main() -> anyhow::Result<()> {
-    let ip = Ip::parse();
+    let ip = Ip::parse_from(std::env::args_os());
     let address = ip.get().context("getting your IP address")?;
     println!("{address}");
     Ok(())
@@ -27,6 +27,6 @@ impl Ip {
             Ip::V4 => "https://api.ipify.org/?format=text",
             Ip::V6 => "https://api64.ipify.org/?format=text",
         };
-        Ok(reqwest::blocking::get(url)?.text()?.trim().parse()?)
+        Ok(ureq::get(url).call()?.into_string()?.trim().parse()?)
     }
 }
