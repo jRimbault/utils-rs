@@ -10,4 +10,5 @@ members = [
     "ip",
     "evictmap",
     "pretty-xml",
+    "unc",
 ]

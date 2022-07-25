@@ -1,4 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkGroup, measurement::WallTime};
+use criterion::{
+    black_box, criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
+};
 use rand::prelude::SliceRandom;
 
 fn yadf() -> Vec<(u64, String)> {
@@ -23,13 +25,10 @@ fn yadf() -> Vec<(u64, String)> {
 
 fn bench_bag<T>(group: &mut BenchmarkGroup<WallTime>, items: &[(u64, String)])
 where
-    T: FromIterator<(u64, String)>
+    T: FromIterator<(u64, String)>,
 {
     group.bench_function(std::any::type_name::<T>(), |b| {
-        b.iter_with_setup(
-            || items.to_vec(),
-            |items| T::from_iter(black_box(items)),
-        )
+        b.iter_with_setup(|| items.to_vec(), |items| T::from_iter(black_box(items)))
     });
 }
 
