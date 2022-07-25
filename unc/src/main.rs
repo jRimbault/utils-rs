@@ -6,8 +6,7 @@
 
 use std::{
     env,
-    io,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 #[cfg(not(windows))]
@@ -17,15 +16,14 @@ fn main() -> Result<(), &'static str> {
 
 #[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = match (env::args_os().nth(1), env::current_dir()) {
-        (Some(path), _) => canonicalize(path),
-        (None, Ok(path)) => canonicalize(path),
+    let unc = match (env::args_os().nth(1), env::current_dir()) {
+        (Some(arg), _) => {
+            let arg: &Path = arg.as_ref();
+            arg.canonicalize()?
+        },
+        (None, Ok(cwd)) => cwd.canonicalize()?,
         _ => Err("no path given")?,
-    }?;
-    println!("{}", path.display());
+    };
+    println!("{}", unc.display());
     Ok(())
-}
-
-fn canonicalize<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
-    path.as_ref().canonicalize()
 }
