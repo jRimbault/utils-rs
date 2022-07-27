@@ -12,3 +12,7 @@ members = [
     "pretty-xml",
     "unc",
 ]
+
+[profile.dev.package.backtrace]
+opt-level = 3
+
