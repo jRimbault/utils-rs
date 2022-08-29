@@ -4,17 +4,12 @@
 //!
 //! The standard library `canonicalize` function returns the correct UNC path on Windows.
 
-#[cfg(not(windows))]
-use unix as platform;
-#[cfg(windows)]
-use windows as platform;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    Ok(platform::main()?)
+    Ok(imp::main()?)
 }
 
 #[cfg(windows)]
-mod windows {
+mod imp {
     use std::{env, ffi::OsStr, io, path::Path};
 
     pub fn main() -> io::Result<()> {
@@ -45,7 +40,7 @@ mod windows {
 }
 
 #[cfg(not(windows))]
-mod unix {
+mod imp {
     pub fn main() -> Result<(), &'static str> {
         Err("This program is useless on any platform but Windows")
     }
