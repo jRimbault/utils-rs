@@ -79,15 +79,11 @@ async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Res
 }
 
 fn image_url(base_url: &reqwest::Url, image_source: &str) -> Option<reqwest::Url> {
-    let r1 = reqwest::Url::parse(image_source);
-    if let Ok(url) = r1 {
-        return Some(url);
+    if let Ok(url) = reqwest::Url::parse(image_source) {
+        Some(url)
+    } else {
+        base_url.join(image_source).ok()
     }
-    let r2 = base_url.join(image_source);
-    if let Ok(url) = r2 {
-        return Some(url);
-    }
-    None
 }
 
 fn setup_tracing() -> anyhow::Result<()> {
