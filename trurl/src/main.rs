@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
+use itertools::Itertools;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -9,11 +10,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Action {
-    Get { target: Target },
+    Get { targets: Vec<Target> },
     Set { target: Target, value: String },
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, ValueEnum)]
 enum Target {
     Host,
     Path,
@@ -25,58 +26,43 @@ fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let args = Cli::parse();
     match &args.action {
-        Action::Get {
-            target: Target::Host,
-        } => {
-            println!("{}", args.url.host().unwrap());
+        Action::Get { targets } => {
+            for target in targets
+                .into_iter()
+                .unique()
+                .map(|target| target.fetch(&args.url))
+                .intersperse(Some(" "))
+            {
+                print!("{}", target.unwrap());
+            }
+            println!()
         }
-        Action::Get {
-            target: Target::Scheme,
-        } => {
-            println!("{}", args.url.scheme());
-        }
-        Action::Get {
-            target: Target::Path,
-        } => {
-            println!("{}", args.url.path());
-        }
-        Action::Get {
-            target: Target::Query,
-        } => {
-            println!("{}", args.url.query().unwrap());
-        }
-        Action::Set {
-            target: Target::Host,
-            value,
-        } => {
-            let mut url = args.url.clone();
-            url.set_host(Some(value))?;
-            println!("{url}");
-        }
-        Action::Set {
-            target: Target::Scheme,
-            value,
-        } => {
-            let mut url = args.url.clone();
-            url.set_scheme(&value).unwrap();
-            println!("{url}");
-        }
-        Action::Set {
-            target: Target::Path,
-            value,
-        } => {
-            let mut url = args.url.clone();
-            url.set_path(&value);
-            println!("{url}");
-        }
-        Action::Set {
-            target: Target::Query,
-            value,
-        } => {
-            let mut url = args.url.clone();
-            url.set_query(Some(value));
+        Action::Set { target, value } => {
+            let url = target.set(&args.url, value);
             println!("{url}");
         }
     }
     Ok(())
+}
+
+impl Target {
+    fn fetch<'a>(&self, url: &'a url::Url) -> Option<&'a str> {
+        match self {
+            Target::Host => url.host_str(),
+            Target::Path => Some(url.path()),
+            Target::Query => url.query(),
+            Target::Scheme => Some(url.scheme()),
+        }
+    }
+
+    fn set(&self, url: &url::Url, value: &str) -> url::Url {
+        let mut url = url.clone();
+        match self {
+            Target::Host => url.set_host(Some(value)).unwrap(),
+            Target::Path => url.set_path(&value),
+            Target::Query => url.set_query(Some(value)),
+            Target::Scheme => url.set_scheme(&value).unwrap(),
+        }
+        url
+    }
 }

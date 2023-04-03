@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.2.1", features = ["derive"] }
 color-eyre = "0.6.2"
+itertools = "0.10.5"
 url = "2.3.1"
