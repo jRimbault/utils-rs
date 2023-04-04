@@ -1,13 +1,17 @@
 mod imp;
 
+use std::collections::HashMap;
+
 use clap::{Parser, Subcommand, ValueEnum};
-use itertools::Itertools;
+use serde::Serialize;
 
 #[derive(Debug, Parser)]
 struct Cli {
     url: url::Url,
     #[command(subcommand)]
     action: Action,
+    #[clap(short, long)]
+    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -27,7 +31,8 @@ struct SetAction {
     value: String,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, ValueEnum, Serialize)]
+#[serde(rename_all = "camelCase")]
 enum Target {
     Fragment,
     Host,
@@ -42,25 +47,29 @@ fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
     match &args.action {
         Action::Get { targets } => {
-            for target in Itertools::intersperse(
-                targets
-                    .into_iter()
-                    .unique()
-                    .map(|target| target.fetch(&args.url)),
-                Some(" ".to_owned()),
-            ) {
-                print!("{}", target.unwrap());
+            let map: HashMap<_, _> = targets
+                .into_iter()
+                .map(|t| (t, t.fetch(&args.url)))
+                .collect();
+            if args.json {
+                serde_json::to_writer_pretty(std::io::stdout().lock(), &map)?;
+            } else {
+                print!("{map:?}");
             }
-            println!()
         }
         Action::Set { actions } => {
             let mut url = args.url.clone();
             for action in actions {
                 action.target.set(&mut url, &action.value);
             }
-            println!("{url}");
+            if args.json {
+                serde_json::to_writer_pretty(std::io::stdout().lock(), &url)?;
+            } else {
+                print!("{url}");
+            }
         }
     }
+    println!();
     Ok(())
 }
 

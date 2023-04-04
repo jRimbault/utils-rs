@@ -14,6 +14,3 @@ members = [
     "unc",
 ]
 
-[profile.dev.package.backtrace]
-opt-level = 3
-
