@@ -1,3 +1,5 @@
+mod imp;
+
 use clap::{Parser, Subcommand, ValueEnum};
 use itertools::Itertools;
 
@@ -10,8 +12,19 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Action {
+    /// Parts of the url to obtain
     Get { targets: Vec<Target> },
-    Set { target: Target, value: String },
+    /// Parts of the url to update
+    Set {
+        #[clap(value_parser = clap::value_parser!(SetAction))]
+        actions: Vec<SetAction>,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct SetAction {
+    target: Target,
+    value: String,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, ValueEnum)]
@@ -27,18 +40,22 @@ fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
     match &args.action {
         Action::Get { targets } => {
-            for target in targets
-                .into_iter()
-                .unique()
-                .map(|target| target.fetch(&args.url))
-                .intersperse(Some(" "))
-            {
+            for target in Itertools::intersperse(
+                targets
+                    .into_iter()
+                    .unique()
+                    .map(|target| target.fetch(&args.url)),
+                Some(" "),
+            ) {
                 print!("{}", target.unwrap());
             }
             println!()
         }
-        Action::Set { target, value } => {
-            let url = target.set(&args.url, value);
+        Action::Set { actions } => {
+            let mut url = args.url.clone();
+            for action in actions {
+                action.target.set(&mut url, &action.value);
+            }
             println!("{url}");
         }
     }
@@ -55,14 +72,12 @@ impl Target {
         }
     }
 
-    fn set(&self, url: &url::Url, value: &str) -> url::Url {
-        let mut url = url.clone();
+    fn set(&self, url: &mut url::Url, value: &str) {
         match self {
             Target::Host => url.set_host(Some(value)).unwrap(),
             Target::Path => url.set_path(&value),
             Target::Query => url.set_query(Some(value)),
             Target::Scheme => url.set_scheme(&value).unwrap(),
         }
-        url
     }
 }
