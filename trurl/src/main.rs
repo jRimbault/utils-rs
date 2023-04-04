@@ -47,13 +47,13 @@ fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
     match &args.action {
         Action::Get { targets } => {
-            let map = extract_to_json(&args.url, targets);
+            let map = extract_to_map(&args.url, targets);
             if args.json {
                 serde_json::to_writer_pretty(std::io::stdout().lock(), &map)?;
             } else {
                 for (key, value) in map {
                     if key != "url" {
-                        print!("{} ", value.as_str().unwrap());
+                        print!("{} ", value);
                     }
                 }
             }
@@ -66,7 +66,7 @@ fn main() -> color_eyre::Result<()> {
             if args.json {
                 serde_json::to_writer_pretty(
                     std::io::stdout().lock(),
-                    &extract_to_json(&url, Target::value_variants()),
+                    &extract_to_map(&url, Target::value_variants()),
                 )?;
             } else {
                 print!("{url}");
@@ -115,9 +115,9 @@ impl Target {
     }
 }
 
-fn extract_to_json(url: &url::Url, parts: &[Target]) -> serde_json::Map<String, serde_json::Value> {
-    let mut map = serde_json::Map::new();
-    map.insert("url".into(), url.to_string().into());
+fn extract_to_map(url: &url::Url, parts: &[Target]) -> indexmap::IndexMap<String, String> {
+    let mut map = indexmap::IndexMap::new();
+    map.insert("url".into(), url.to_string());
     for part in parts {
         if let Some(value) = part.fetch(url) {
             if value.is_empty() {

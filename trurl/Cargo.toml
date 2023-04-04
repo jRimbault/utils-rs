@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.2.1", features = ["derive"] }
 color-eyre = "0.6.2"
+indexmap = { version = "1.9.3", features = ["serde"] }
 serde = { version = "1.0.159", features = ["derive"] }
 serde_json = { version = "1.0.95", features = ["preserve_order"] }
 url = { version = "2.3.1", features = ["serde"] }
