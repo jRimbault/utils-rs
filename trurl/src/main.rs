@@ -1,7 +1,5 @@
 mod imp;
 
-use std::collections::HashMap;
-
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
@@ -47,14 +45,15 @@ fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
     match &args.action {
         Action::Get { targets } => {
-            let map: HashMap<_, _> = targets
-                .into_iter()
-                .map(|t| (t, t.fetch(&args.url)))
-                .collect();
+            let map = json(&args.url, targets);
             if args.json {
                 serde_json::to_writer_pretty(std::io::stdout().lock(), &map)?;
             } else {
-                print!("{map:?}");
+                for (key, value) in map {
+                    if key != "url" {
+                        print!("{} ", value.as_str().unwrap());
+                    }
+                }
             }
         }
         Action::Set { actions } => {
@@ -63,7 +62,10 @@ fn main() -> color_eyre::Result<()> {
                 action.target.set(&mut url, &action.value);
             }
             if args.json {
-                serde_json::to_writer_pretty(std::io::stdout().lock(), &url)?;
+                serde_json::to_writer_pretty(
+                    std::io::stdout().lock(),
+                    &json(&url, Target::value_variants()),
+                )?;
             } else {
                 print!("{url}");
             }
@@ -88,11 +90,28 @@ impl Target {
     fn set(&self, url: &mut url::Url, value: &str) {
         match self {
             Target::Fragment => url.set_fragment(Some(value)),
-            Target::Host => url.set_host(Some(value)).expect("setting host"),
+            Target::Host => url
+                .set_host(Some(value))
+                .expect(&format!("invalid host: {value:?}")),
             Target::Path => url.set_path(&value),
-            Target::Port => url.set_port(value.parse().ok()).expect("setting port"),
+            Target::Port => url
+                .set_port(value.parse().ok())
+                .expect(&format!("invalid port: {value:?}")),
             Target::Query => url.set_query(Some(value)),
-            Target::Scheme => url.set_scheme(&value).expect("setting scheme"),
+            Target::Scheme => url
+                .set_scheme(&value)
+                .expect(&format!("invalid scheme: {value:?}")),
         }
     }
+}
+
+fn json(url: &url::Url, parts: &[Target]) -> serde_json::Map<String, serde_json::Value> {
+    let mut map = serde_json::Map::new();
+    map.insert("url".into(), url.to_string().into());
+    for part in parts {
+        if let Some(value) = part.fetch(url) {
+            map.insert(part.to_string(), value.into());
+        }
+    }
+    map
 }

@@ -18,3 +18,17 @@ impl std::str::FromStr for SetAction {
         }
     }
 }
+
+impl std::fmt::Display for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Target::Fragment => "fragment",
+            Target::Host => "host",
+            Target::Path => "path",
+            Target::Port => "port",
+            Target::Query => "query",
+            Target::Scheme => "scheme",
+        };
+        write!(f, "{s}")
+    }
+}
