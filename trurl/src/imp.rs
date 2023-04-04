@@ -24,6 +24,7 @@ impl std::fmt::Display for Target {
         let s = match self {
             Target::Fragment => "fragment",
             Target::Host => "host",
+            Target::Password => "password",
             Target::Path => "path",
             Target::Port => "port",
             Target::Query => "query",

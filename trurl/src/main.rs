@@ -34,6 +34,7 @@ struct SetAction {
 enum Target {
     Fragment,
     Host,
+    Password,
     Path,
     Port,
     Query,
@@ -81,6 +82,7 @@ impl Target {
         match self {
             Target::Fragment => url.fragment().map(ToString::to_string),
             Target::Host => url.host_str().map(ToString::to_string),
+            Target::Password => url.password().map(ToString::to_string),
             Target::Path => Some(url.path().to_owned()),
             Target::Port => url.port_or_known_default().map(|port| port.to_string()),
             Target::Query => url.query().map(ToString::to_string),
@@ -95,6 +97,9 @@ impl Target {
             Target::Host => url
                 .set_host(Some(value))
                 .unwrap_or_else(|_| panic!("invalid host: {value:?}")),
+            Target::Password => url
+                .set_password(Some(value))
+                .unwrap_or_else(|_| panic!("invalid password: {value:?}")),
             Target::Path => url.set_path(value),
             Target::Port => url
                 .set_port(value.parse().ok())
