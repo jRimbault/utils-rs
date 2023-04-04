@@ -28,6 +28,7 @@ impl std::fmt::Display for Target {
             Target::Port => "port",
             Target::Query => "query",
             Target::Scheme => "scheme",
+            Target::User => "user",
         };
         write!(f, "{s}")
     }

@@ -38,6 +38,7 @@ enum Target {
     Port,
     Query,
     Scheme,
+    User,
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -84,6 +85,7 @@ impl Target {
             Target::Port => url.port_or_known_default().map(|port| port.to_string()),
             Target::Query => url.query().map(ToString::to_string),
             Target::Scheme => Some(url.scheme().to_owned()),
+            Target::User => Some(url.username().to_owned()),
         }
     }
 
@@ -92,15 +94,18 @@ impl Target {
             Target::Fragment => url.set_fragment(Some(value)),
             Target::Host => url
                 .set_host(Some(value))
-                .expect(&format!("invalid host: {value:?}")),
-            Target::Path => url.set_path(&value),
+                .unwrap_or_else(|_| panic!("invalid host: {value:?}")),
+            Target::Path => url.set_path(value),
             Target::Port => url
                 .set_port(value.parse().ok())
-                .expect(&format!("invalid port: {value:?}")),
+                .unwrap_or_else(|_| panic!("invalid port: {value:?}")),
             Target::Query => url.set_query(Some(value)),
             Target::Scheme => url
-                .set_scheme(&value)
-                .expect(&format!("invalid scheme: {value:?}")),
+                .set_scheme(value)
+                .unwrap_or_else(|_| panic!("invalid scheme: {value:?}")),
+            Target::User => url
+                .set_username(value)
+                .unwrap_or_else(|_| panic!("invalid user: {value:?}")),
         }
     }
 }
@@ -110,6 +115,9 @@ fn json(url: &url::Url, parts: &[Target]) -> serde_json::Map<String, serde_json:
     map.insert("url".into(), url.to_string().into());
     for part in parts {
         if let Some(value) = part.fetch(url) {
+            if value.is_empty() {
+                continue;
+            }
             map.insert(part.to_string(), value.into());
         }
     }
