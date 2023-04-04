@@ -29,8 +29,10 @@ struct SetAction {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, ValueEnum)]
 enum Target {
+    Fragment,
     Host,
     Path,
+    Port,
     Query,
     Scheme,
 }
@@ -45,7 +47,7 @@ fn main() -> color_eyre::Result<()> {
                     .into_iter()
                     .unique()
                     .map(|target| target.fetch(&args.url)),
-                Some(" "),
+                Some(" ".to_owned()),
             ) {
                 print!("{}", target.unwrap());
             }
@@ -63,21 +65,25 @@ fn main() -> color_eyre::Result<()> {
 }
 
 impl Target {
-    fn fetch<'a>(&self, url: &'a url::Url) -> Option<&'a str> {
+    fn fetch(&self, url: &url::Url) -> Option<String> {
         match self {
-            Target::Host => url.host_str(),
-            Target::Path => Some(url.path()),
-            Target::Query => url.query(),
-            Target::Scheme => Some(url.scheme()),
+            Target::Fragment => url.fragment().map(ToString::to_string),
+            Target::Host => url.host_str().map(ToString::to_string),
+            Target::Path => Some(url.path().to_owned()),
+            Target::Port => url.port_or_known_default().map(|port| port.to_string()),
+            Target::Query => url.query().map(ToString::to_string),
+            Target::Scheme => Some(url.scheme().to_owned()),
         }
     }
 
     fn set(&self, url: &mut url::Url, value: &str) {
         match self {
-            Target::Host => url.set_host(Some(value)).unwrap(),
+            Target::Fragment => url.set_fragment(Some(value)),
+            Target::Host => url.set_host(Some(value)).expect("setting host"),
             Target::Path => url.set_path(&value),
+            Target::Port => url.set_port(value.parse().ok()).expect("setting port"),
             Target::Query => url.set_query(Some(value)),
-            Target::Scheme => url.set_scheme(&value).unwrap(),
+            Target::Scheme => url.set_scheme(&value).expect("setting scheme"),
         }
     }
 }
