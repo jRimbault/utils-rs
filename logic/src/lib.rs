@@ -77,6 +77,15 @@ pub struct Circuit {
     connections: HashMap<String, Connection>,
 }
 
+/// Cached version of the logic circuit.
+///
+/// Use if you want better time performance at the cost of memory.
+///
+/// Can be built from a [`Circuit`]:
+/// ```
+/// # use logic::{CachedCircuit, Circuit};
+/// let circuit = CachedCircuit::from(Circuit::default());
+/// ```
 #[derive(Debug, Default)]
 pub struct CachedCircuit {
     circuit: Circuit,
@@ -120,6 +129,7 @@ impl Circuit {
         Ok(circuit)
     }
 
+    /// Adds a new connection to the existing circuit.
     pub fn add_connection<T>(&mut self, connection: T) -> Result<(), ConnectionParseError>
     where
         T: TryIntoConnection,
@@ -130,6 +140,7 @@ impl Circuit {
         Ok(())
     }
 
+    /// Get the signal out of the specified cable. `None` if no matching cable.
     pub fn signal(&self, cable: &str) -> Option<u16> {
         let connection = self.connections.get(cable)?;
         let signal = signal::explore_gates(self, connection)?;
@@ -138,6 +149,8 @@ impl Circuit {
 }
 
 impl CachedCircuit {
+    /// Adds a new connection to the existing circuit.
+    /// Same as [`Circuit::add_connection`], but resets the interval value cache.
     pub fn add_connection<T>(&mut self, connection: T) -> Result<(), ConnectionParseError>
     where
         T: TryIntoConnection,
@@ -147,6 +160,7 @@ impl CachedCircuit {
         Ok(())
     }
 
+    /// Get the signal out of the specified cable. `None` if no matching cable.
     pub fn signal(&self, cable: &str) -> Option<u16> {
         if let Some(i) = self.cache.borrow().get(cable) {
             return Some(*i);
@@ -233,6 +247,24 @@ impl std::iter::Extend<Connection> for Circuit {
     fn extend<T: IntoIterator<Item = Connection>>(&mut self, iter: T) {
         for connection in iter {
             self.connections
+                .insert(connection.output.clone(), connection);
+        }
+    }
+}
+
+impl std::iter::FromIterator<Connection> for CachedCircuit {
+    fn from_iter<T: IntoIterator<Item = Connection>>(iter: T) -> Self {
+        let mut circuit = Circuit::default();
+        std::iter::Extend::extend(&mut circuit, iter);
+        CachedCircuit::from(circuit)
+    }
+}
+
+impl std::iter::Extend<Connection> for CachedCircuit {
+    fn extend<T: IntoIterator<Item = Connection>>(&mut self, iter: T) {
+        for connection in iter {
+            self.circuit
+                .connections
                 .insert(connection.output.clone(), connection);
         }
     }

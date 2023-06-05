@@ -1,3 +1,5 @@
+//! Internal implemention detail to share some logic between the cached and
+//! non-cached version of the logic circuit.
 use crate::{And, Assignment, CachedCircuit, Circuit, Connection, LogicGate};
 
 pub fn explore_gates<T>(circuit: &T, connection: &Connection) -> Option<u16>
