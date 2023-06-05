@@ -114,7 +114,6 @@ impl Circuit {
 
     /// Convenience method to build a [`Circuit`] from a file.
     pub fn from_file(file_path: &std::path::Path) -> Result<Self, Error> {
-        dbg!(file_path);
         Self::from_read(File::open(file_path)?)
     }
 
@@ -267,5 +266,6 @@ impl std::iter::Extend<Connection> for CachedCircuit {
                 .connections
                 .insert(connection.output.clone(), connection);
         }
+        self.cache.borrow_mut().clear();
     }
 }
