@@ -129,11 +129,11 @@ impl Circuit {
     }
 
     /// Adds a new connection to the existing circuit.
-    pub fn add_connection<T>(&mut self, connection: T) -> Result<(), ConnectionParseError>
+    pub fn add_connection<T>(&mut self, connection: T) -> Result<(), T::Error>
     where
-        T: TryIntoConnection,
+        T: TryInto<Connection>,
     {
-        let connection = connection.try_into_connection()?;
+        let connection = connection.try_into()?;
         self.connections
             .insert(connection.output.clone(), connection);
         Ok(())
@@ -150,9 +150,9 @@ impl Circuit {
 impl CachedCircuit {
     /// Adds a new connection to the existing circuit.
     /// Same as [`Circuit::add_connection`], but resets the interval value cache.
-    pub fn add_connection<T>(&mut self, connection: T) -> Result<(), ConnectionParseError>
+    pub fn add_connection<T>(&mut self, connection: T) -> Result<(), T::Error>
     where
-        T: TryIntoConnection,
+        T: TryInto<Connection>,
     {
         self.circuit.add_connection(connection)?;
         self.cache.borrow_mut().clear();
@@ -189,25 +189,17 @@ impl Connection {
     }
 }
 
-pub trait TryIntoConnection {
-    fn try_into_connection(self) -> Result<Connection, ConnectionParseError>;
-}
-
-impl TryIntoConnection for &str {
-    fn try_into_connection(self) -> Result<Connection, ConnectionParseError> {
-        self.parse()
+impl TryFrom<&str> for Connection {
+    type Error = ConnectionParseError;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
-impl TryIntoConnection for &String {
-    fn try_into_connection(self) -> Result<Connection, ConnectionParseError> {
-        self.parse()
-    }
-}
-
-impl TryIntoConnection for Connection {
-    fn try_into_connection(self) -> Result<Connection, ConnectionParseError> {
-        Ok(self)
+impl TryFrom<&String> for Connection {
+    type Error = ConnectionParseError;
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
