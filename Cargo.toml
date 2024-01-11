@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
     "scrap-images",
     "bag",
@@ -12,5 +13,6 @@ members = [
     "pretty-xml",
     "unc",
     "logic",
+    "qr",
 ]
 
