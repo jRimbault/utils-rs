@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Context;
 use clap::Parser;
-use qriter::qriter;
+use qriter::QrFileEncoder;
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -18,11 +18,13 @@ fn main() -> anyhow::Result<()> {
     let name = args
         .file
         .file_stem()
-        .context("file name should have a stem")?;
-    let out = Path::new(name);
+        .and_then(|n| n.to_str())
+        .context("file name should have an utf8 stem")?;
+    let out = Path::new(env!("CARGO_BIN_NAME"));
     std::fs::create_dir_all(out)?;
-    for (i, image) in qriter(file).enumerate() {
-        let name = format!("{:02}-qrcode.png", i + 1);
+    let encoder = QrFileEncoder::new(file);
+    for (i, image) in encoder.into_iter().enumerate() {
+        let name = format!("{:02}-{name}.png", i + 1);
         image
             .save(out.join(&name))
             .context(format!("writing {name:?}"))?
@@ -31,39 +33,49 @@ fn main() -> anyhow::Result<()> {
 }
 
 mod qriter {
-    use image::ImageBuffer;
-    use image::Luma;
+    use image::{ImageBuffer, Luma};
     use qrcode::QrCode;
-    use std;
-    use std::io::BufReader;
-    use std::io::Read;
-
-    pub fn qriter<R>(reader: R) -> QrIter<R>
-    where
-        R: Read,
-    {
-        QrIter::new(reader)
-    }
+    use std::io::{BufReader, Read};
 
     #[derive(Debug)]
-    pub struct QrIter<R> {
-        buffer: [u8; 2048],
+    pub struct QrFileEncoder<R> {
         reader: BufReader<R>,
     }
 
-    impl<R> QrIter<R>
+    impl<R> QrFileEncoder<R>
     where
         R: Read,
     {
-        fn new(reader: R) -> Self {
-            QrIter {
-                buffer: [0; 2048],
+        pub fn new(reader: R) -> Self {
+            QrFileEncoder {
                 reader: BufReader::new(reader),
             }
         }
     }
 
-    impl<R> Iterator for QrIter<R>
+    #[derive(Debug)]
+    pub struct QrFileEncoderIter<R> {
+        buffer: [u8; 2048],
+        reader: BufReader<R>,
+    }
+
+    impl<R> IntoIterator for QrFileEncoder<R>
+    where
+        R: Read,
+    {
+        type Item = ImageBuffer<Luma<u8>, Vec<u8>>;
+
+        type IntoIter = QrFileEncoderIter<R>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            QrFileEncoderIter {
+                buffer: [0; 2048],
+                reader: self.reader,
+            }
+        }
+    }
+
+    impl<R> Iterator for QrFileEncoderIter<R>
     where
         R: Read,
     {
