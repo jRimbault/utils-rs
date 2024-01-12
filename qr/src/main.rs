@@ -3,39 +3,52 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use qriter::QrFileEncoder;
 
 #[derive(Debug, Parser)]
 struct Args {
     /// File to encode as QR codes
     file: PathBuf,
+    /// Verbosity level
+    #[command(flatten)]
+    verbose: Verbosity<InfoLevel>,
 }
 
-fn main() -> anyhow::Result<()> {
-    env_logger::builder()
-        .format_timestamp(None)
-        .filter_level(log::LevelFilter::Debug)
-        .init();
+fn main() -> Result<()> {
     let args = Args::parse();
+    env_logger::builder()
+        .filter_level(args.verbose.log_level_filter())
+        .init();
     let file = File::open(&args.file)?;
     let name = args
         .file
         .file_stem()
         .and_then(|n| n.to_str())
         .context("file name should have an utf8 stem")?;
-    let out = Path::new(env!("CARGO_BIN_NAME"));
-    std::fs::create_dir_all(out)?;
-    let encoder = QrFileEncoder::new(file);
-    for (i, image) in encoder.into_iter().enumerate() {
-        let name = format!("{:02}-{name}.png", i + 1);
-        log::info!("saved {name:?} to {out:?}");
-        image
-            .save(out.join(&name))
-            .context(format!("writing {name:?}"))?;
-    }
-    Ok(())
+    std::thread::scope(|scope| -> Result<()> {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+        scope.spawn(move || {
+            let encoder = QrFileEncoder::new(file);
+            for (i, image) in encoder.into_iter().enumerate() {
+                log::trace!("encoded part of {name}");
+                sender
+                    .send((format!("{:02}-{name}.png", i + 1), image))
+                    .unwrap();
+            }
+        });
+        let out = Path::new(env!("CARGO_BIN_NAME"));
+        std::fs::create_dir_all(out)?;
+        for (name, image) in receiver {
+            image
+                .save(out.join(&name))
+                .context(format!("writing {name:?}"))?;
+            log::info!("saved {name:?} to {out:?}");
+        }
+        Ok(())
+    })
 }
 
 mod qriter {
