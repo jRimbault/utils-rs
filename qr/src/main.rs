@@ -93,7 +93,10 @@ mod qriter {
                     Ok(0) => return None,
                     Ok(len) => len,
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(_) => return None,
+                    Err(error) => {
+                        log::error!("couldn't read file {error}");
+                        return None;
+                    }
                 };
                 let code = QrCode::new(&mut self.buffer[..len]).ok()?;
                 return Some(code.render::<Luma<u8>>().build());
