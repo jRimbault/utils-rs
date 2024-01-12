@@ -12,7 +12,6 @@ use qriter::QrFileEncoder;
 struct Args {
     /// File to encode as QR codes
     file: PathBuf,
-    /// Verbosity level
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
 }
