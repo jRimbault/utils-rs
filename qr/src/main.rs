@@ -98,7 +98,7 @@ mod qriter {
                         return None;
                     }
                 };
-                let code = QrCode::new(&mut self.buffer[..len]).ok()?;
+                let code = QrCode::new(&self.buffer[..len]).ok()?;
                 return Some(code.render::<Luma<u8>>().build());
             }
         }
