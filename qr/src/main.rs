@@ -30,7 +30,7 @@ fn main() -> Result<()> {
         .file_name()
         .and_then(|n| n.to_str())
         .context("file name should be utf8")?;
-    std::thread::scope(|scope| -> Result<()> {
+    std::thread::scope(|scope| {
         let (sender, receiver) = sync_channel(1);
         scope.spawn(move || {
             let encoder = QrFileEncoder::new(file);
