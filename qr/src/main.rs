@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use clap_verbosity_flag::{InfoLevel, Verbosity};
+use clap_verbosity_flag::{Verbosity, WarnLevel};
 use qriter::QrFileEncoder;
 
 #[derive(Debug, Parser)]
@@ -14,7 +14,7 @@ struct Args {
     file: PathBuf,
     /// Verbosity level
     #[command(flatten)]
-    verbose: Verbosity<InfoLevel>,
+    verbose: Verbosity<WarnLevel>,
 }
 
 fn main() -> Result<()> {
