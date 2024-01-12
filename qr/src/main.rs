@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         scope.spawn(move || {
             let encoder = QrFileEncoder::new(file);
             for (i, image) in encoder.into_iter().enumerate() {
-                log::trace!("encoded part of {name}");
+                log::debug!("encoded part of {name}");
                 sender
                     .send((format!("{:02}-{name}.png", i + 1), image))
                     .unwrap();
