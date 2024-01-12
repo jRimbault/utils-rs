@@ -26,7 +26,7 @@ fn main() -> Result<()> {
         .file
         .file_name()
         .and_then(|n| n.to_str())
-        .context("file name should have be utf8")?;
+        .context("file name should be utf8")?;
     std::thread::scope(|scope| -> Result<()> {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         scope.spawn(move || {
