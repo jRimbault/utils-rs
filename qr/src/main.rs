@@ -9,6 +9,7 @@ use qriter::QrFileEncoder;
 
 #[derive(Debug, Parser)]
 struct Args {
+    /// File to encode as QR codes
     file: PathBuf,
 }
 
