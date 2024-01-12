@@ -33,7 +33,7 @@ fn main() -> anyhow::Result<()> {
         log::info!("saved {name:?} to {out:?}");
         image
             .save(out.join(&name))
-            .context(format!("writing {name:?}"))?
+            .context(format!("writing {name:?}"))?;
     }
     Ok(())
 }
