@@ -13,6 +13,10 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::builder()
+        .format_timestamp(None)
+        .filter_level(log::LevelFilter::Debug)
+        .init();
     let args = Args::parse();
     let file = File::open(&args.file)?;
     let name = args
@@ -25,6 +29,7 @@ fn main() -> anyhow::Result<()> {
     let encoder = QrFileEncoder::new(file);
     for (i, image) in encoder.into_iter().enumerate() {
         let name = format!("{:02}-{name}.png", i + 1);
+        log::info!("saved {name:?} to {out:?}");
         image
             .save(out.join(&name))
             .context(format!("writing {name:?}"))?
