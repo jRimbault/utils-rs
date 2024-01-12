@@ -24,11 +24,11 @@ fn main() -> Result<()> {
     let file = File::open(&args.file)?;
     let name = args
         .file
-        .file_stem()
+        .file_name()
         .and_then(|n| n.to_str())
-        .context("file name should have an utf8 stem")?;
+        .context("file name should have be utf8")?;
     std::thread::scope(|scope| -> Result<()> {
-        let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         scope.spawn(move || {
             let encoder = QrFileEncoder::new(file);
             for (i, image) in encoder.into_iter().enumerate() {
