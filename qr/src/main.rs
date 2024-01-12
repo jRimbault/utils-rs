@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     path::{Path, PathBuf},
+    sync::mpsc::sync_channel,
 };
 
 mod encoder;
@@ -30,7 +31,7 @@ fn main() -> Result<()> {
         .and_then(|n| n.to_str())
         .context("file name should be utf8")?;
     std::thread::scope(|scope| -> Result<()> {
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let (sender, receiver) = sync_channel(1);
         scope.spawn(move || {
             let encoder = QrFileEncoder::new(file);
             for (i, image) in encoder.into_iter().enumerate() {
