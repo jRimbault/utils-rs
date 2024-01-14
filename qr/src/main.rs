@@ -14,6 +14,9 @@ struct Args {
     /// Output directory
     #[arg(short, long, default_value = env!("CARGO_BIN_NAME"))]
     out: PathBuf,
+    /// Open the QR codes automatically with your configured image viewer
+    #[arg(long)]
+    open: bool,
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
 }
@@ -42,11 +45,17 @@ fn main() -> Result<()> {
         });
         let out = &args.out;
         std::fs::create_dir_all(out)?;
+        let mut images = Vec::new();
         for (name, image) in receiver {
-            image
-                .save(out.join(&name))
-                .context(format!("writing {name:?}"))?;
+            let path = out.join(&name);
+            image.save(&path).context(format!("writing {name:?}"))?;
             log::info!("saved {name:?} to {out:?}");
+            if args.open {
+                images.push(path);
+            }
+        }
+        for image in images {
+            open::that_detached(image)?;
         }
         Ok(())
     })
