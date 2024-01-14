@@ -1,8 +1,4 @@
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-    sync::mpsc::sync_channel,
-};
+use std::{fs::File, path::PathBuf, sync::mpsc::sync_channel};
 
 mod encoder;
 
@@ -15,6 +11,9 @@ use encoder::QrFileEncoder;
 struct Args {
     /// File to encode as QR codes
     file: PathBuf,
+    /// Output directory
+    #[arg(short, long, default_value = env!("CARGO_BIN_NAME"))]
+    out: PathBuf,
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
 }
@@ -41,7 +40,7 @@ fn main() -> Result<()> {
                     .unwrap();
             }
         });
-        let out = Path::new(env!("CARGO_BIN_NAME"));
+        let out = &args.out;
         std::fs::create_dir_all(out)?;
         for (name, image) in receiver {
             image
