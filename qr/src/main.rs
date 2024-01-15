@@ -45,17 +45,13 @@ fn main() -> Result<()> {
         });
         let out = &args.out;
         std::fs::create_dir_all(out)?;
-        let mut images = Vec::new();
         for (name, image) in receiver {
             let path = out.join(&name);
             image.save(&path).context(format!("writing {name:?}"))?;
             log::info!("saved {name:?} to {out:?}");
             if args.open {
-                images.push(path);
+                open::that_detached(path)?;
             }
-        }
-        for image in images {
-            open::that_detached(image)?;
         }
         Ok(())
     })
