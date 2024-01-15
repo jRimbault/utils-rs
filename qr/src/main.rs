@@ -8,6 +8,7 @@ use clap_verbosity_flag::{Verbosity, WarnLevel};
 use encoder::QrFileEncoder;
 
 #[derive(Debug, Parser)]
+#[clap(author, version)]
 struct Args {
     /// File to encode as QR codes
     file: PathBuf,
