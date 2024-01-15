@@ -1,4 +1,8 @@
-use std::{fs::File, path::PathBuf, sync::mpsc::sync_channel};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    sync::mpsc::sync_channel,
+};
 
 mod encoder;
 
@@ -10,8 +14,8 @@ use encoder::QrFileEncoder;
 #[derive(Debug, Parser)]
 #[clap(author, version)]
 struct Args {
-    /// File to encode as QR codes
-    file: PathBuf,
+    /// Files to encode as QR codes
+    files: Vec<PathBuf>,
     /// Output directory
     #[arg(short, long, default_value = env!("CARGO_BIN_NAME"))]
     out: PathBuf,
@@ -27,12 +31,18 @@ fn main() -> Result<()> {
     env_logger::builder()
         .filter_level(args.verbose.log_level_filter())
         .init();
-    let file = File::open(&args.file)?;
-    let name = args
-        .file
+    for file in &args.files {
+        run(&args, &file)?;
+    }
+    Ok(())
+}
+
+fn run(args: &Args, file: &Path) -> Result<()> {
+    let name = file
         .file_name()
         .and_then(|n| n.to_str())
         .context("file name should be utf8")?;
+    let file = File::open(&file)?;
     std::thread::scope(|scope| {
         let (sender, receiver) = sync_channel(1);
         scope.spawn(move || {
