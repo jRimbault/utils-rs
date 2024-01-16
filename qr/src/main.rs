@@ -31,29 +31,30 @@ fn main() -> Result<()> {
     env_logger::builder()
         .filter_level(args.verbose.log_level_filter())
         .init();
-    for file in &args.files {
-        run(&args, &file)?;
-    }
-    Ok(())
+    run(&args)
 }
 
-fn run(args: &Args, file: &Path) -> Result<()> {
-    let name = file
-        .file_name()
-        .and_then(|n| n.to_str())
-        .context("file name should be utf8")?;
-    let file = File::open(&file)?;
+fn run(args: &Args) -> Result<()> {
     std::thread::scope(|scope| {
         let (sender, receiver) = sync_channel(1);
-        scope.spawn(move || {
-            let encoder = QrFileEncoder::new(file);
-            for (i, image) in encoder.into_iter().enumerate() {
-                log::debug!("encoded part of {name}");
-                sender
-                    .send((format!("{:02}-{name}.png", i + 1), image))
-                    .unwrap();
-            }
-        });
+        for file in &args.files {
+            let name = file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .context("file name should be utf8")?;
+            let file = File::open(&file)?;
+            let sender = sender.clone();
+            scope.spawn(move || {
+                let encoder = QrFileEncoder::new(file);
+                for (i, image) in encoder.into_iter().enumerate() {
+                    log::debug!("encoded part of {name}");
+                    sender
+                        .send((format!("{:02}-{name}.png", i + 1), image))
+                        .unwrap();
+                }
+            });
+        }
+        drop(sender);
         let out = &args.out;
         std::fs::create_dir_all(out)?;
         for (name, image) in receiver {
