@@ -1,8 +1,4 @@
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-    sync::mpsc::sync_channel,
-};
+use std::{fs::File, path::PathBuf, sync::mpsc::sync_channel};
 
 mod encoder;
 
