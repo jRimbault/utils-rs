@@ -32,7 +32,7 @@ fn main() -> Result<()> {
 
 fn run(args: &Args) -> Result<()> {
     std::thread::scope(|scope| {
-        let (sender, receiver) = sync_channel(1);
+        let (sender, receiver) = sync_channel(args.files.len());
         for file in &args.files {
             let name = file
                 .file_name()
