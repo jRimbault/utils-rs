@@ -41,7 +41,7 @@ fn run(args: &Args) -> Result<()> {
             let file = File::open(&file)?;
             let sender = sender.clone();
             scope.spawn(move || {
-                let encoder = QrFileEncoder::new(file);
+                let encoder = QrFileEncoder::new(file, name);
                 for (i, image) in encoder.into_iter().enumerate() {
                     log::debug!("encoded part of {name}");
                     sender
