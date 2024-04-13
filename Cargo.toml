@@ -14,5 +14,6 @@ members = [
     "unc",
     "logic",
     "qr",
+    "xkcd_lock",
 ]
 

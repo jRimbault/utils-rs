@@ -1,0 +1,16 @@
+[package]
+name = "xkcd_lock"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.82"
+dirs = "5.0.1"
+env_logger = "0.11.3"
+log = "0.4.21"
+rand = "0.8.5"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.115"
+textwrap = "0.16.1"
+ureq = { version = "2.9.6", features = ["json"] }
+url = { version = "2.5.0", features = ["serde"] }
