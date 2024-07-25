@@ -37,14 +37,15 @@ impl fmt::Display for Error {
     }
 }
 
-pub fn to_writer<W>(writer: &mut W, buf: &[u8]) -> Result<usize, Error>
+pub fn to_writer<R, W>(reader: R, writer: W) -> Result<(), Error>
 where
+    R: io::Read,
     W: io::Write,
 {
     let reader = ParserConfig::new()
         .trim_whitespace(true)
         .ignore_comments(false)
-        .create_reader(buf);
+        .create_reader(reader);
     let mut writer = EmitterConfig::new()
         .perform_indent(true)
         .normalize_empty_elements(false)
@@ -55,12 +56,12 @@ where
             writer.write(event)?;
         }
     }
-    Ok(buf.len())
+    Ok(())
 }
 
 impl fmt::Display for PrettyXml<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        to_writer(&mut FmtWriter(f), self.0).map_err(|_| fmt::Error)?;
+        to_writer(self.0, &mut FmtWriter(f)).map_err(|_| fmt::Error)?;
         Ok(())
     }
 }
