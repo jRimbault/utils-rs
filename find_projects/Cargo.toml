@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5.15"
-ignore = { version = "0.4.23", features = ["simd-accel"] }
+ignore = "0.4.23"
