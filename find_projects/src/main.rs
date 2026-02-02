@@ -75,7 +75,7 @@ fn is_repo_root(dir: &DirEntry) -> bool {
         while let Some(Ok(child)) = children.next() {
             if child.file_type().is_ok_and(|ft| ft.is_dir()) {
                 let name = child.file_name();
-                if name == ".git" || name == ".hg" {
+                if name == ".git" || name == ".hg" || name == ".jj" {
                     return true;
                 }
             }
