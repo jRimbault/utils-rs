@@ -1,7 +1,11 @@
 // src/main.rs
 use clap::Parser;
 use ignore::{DirEntry, WalkBuilder, WalkState};
-use std::{path::PathBuf, thread};
+use std::{
+    io::{BufWriter, Write},
+    path::PathBuf,
+    thread,
+};
 
 /// Recursively list Git / Mercurial repositories beneath PATH (defaults to CWD)
 #[derive(Parser)]
@@ -11,7 +15,7 @@ struct Args {
     path: PathBuf,
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let mut results: Vec<_> = thread::scope(|s| {
         let (sender, receiver) = crossbeam_channel::unbounded();
@@ -57,9 +61,11 @@ fn main() {
             .collect()
     });
     results.sort();
+    let mut stdout = BufWriter::new(std::io::stdout().lock());
     for r in results {
-        println!("{}", r.display());
+        writeln!(&mut stdout, "{}", r.display())?;
     }
+    Ok(())
 }
 
 fn is_repo_root(dir: &DirEntry) -> bool {
