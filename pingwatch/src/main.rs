@@ -1,31 +1,28 @@
-//! Pings a host in a loop with in-place terminal output.
+//! Pings one or more hosts simultaneously, showing live per-host status via
+//! an indicatif MultiProgress TUI.
 //!
-//! Success messages overwrite the current terminal line via CR + erase-to-EOL.
-//! Failure messages are printed on a new persistent line, so they accumulate in
-//! the scroll buffer and are never overwritten.
-//! Every message is prefixed with the local datetime.
+//! Each host occupies one spinner row that is updated in place on success.
+//! Failures are printed as persistent lines above the spinners so they
+//! accumulate in the scroll buffer and are never overwritten.
 
 use anyhow::Context;
 use chrono::Local;
 use clap::Parser;
-use std::{
-    io::{self, Write},
-    net::IpAddr,
-    time::Duration,
-};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::{net::IpAddr, time::Duration};
 use surge_ping::{Client, Config, PingIdentifier, PingSequence, ICMP};
 
-const GREEN_OK: &str = "\x1b[32m✓\x1b[0m";
-const RED_FAIL: &str = "\x1b[31m✗\x1b[0m";
-// CR + erase to end of line
-const OVERWRITE: &str = "\r\x1b[K";
+const GREEN_OK: &str = "\x1b[32mOK\x1b[0m";
+const RED_FAIL: &str = "\x1b[31mFAILED\x1b[0m";
+const YELLOW_WAIT: &str = "\x1b[33mwaiting\x1b[0m";
 
-/// Ping a host in a loop, updating status in place for successes.
+/// Ping one or more hosts simultaneously, showing live status in a TUI.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
-    /// Host to ping (hostname or IP address)
-    host: String,
+    /// Hosts to ping (1–10 hostnames or IP addresses)
+    #[arg(required = true, num_args = 1..=10)]
+    hosts: Vec<String>,
     /// Interval between pings in milliseconds
     #[arg(short, long, default_value = "1000")]
     interval: u64,
@@ -34,37 +31,94 @@ struct Args {
     timeout: u64,
 }
 
-/// Whether the cursor is sitting at the end of an in-place line (no newline yet)
-/// or at the start of a fresh line.
-#[derive(Clone, Copy, PartialEq)]
-enum LineState {
-    Fresh,
-    InPlace,
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let addr = resolve_host(&args.host)
-        .await
-        .with_context(|| format!("resolving '{}'", args.host))?;
+    let multi = MultiProgress::new();
 
-    // Pick the ICMP version to match the resolved address family.
+    // Column width is the length of the longest hostname so the status
+    // column is as tight as possible while still staying aligned.
+    let prefix_width = args.hosts.iter().map(|h| h.len()).max().unwrap_or(0);
+    let template = format!("{{spinner:.cyan}} {{prefix:<{prefix_width}}} {{msg}}");
+    let style = ProgressStyle::default_spinner()
+        .tick_chars("✶✸✹✺✹✷")
+        .template(&template)
+        .expect("valid template");
+
+    // Derive a unique ICMP identifier per host from the process ID so
+    // concurrent pingers don't conflict with each other.
+    let base_id = std::process::id() as u16;
+    let interval = Duration::from_millis(args.interval);
+    let timeout = Duration::from_millis(args.timeout);
+
+    let mut tasks = Vec::with_capacity(args.hosts.len());
+
+    for (i, host) in args.hosts.into_iter().enumerate() {
+        let pb = multi.add(ProgressBar::new_spinner());
+        pb.set_style(style.clone());
+        pb.set_prefix(host.clone());
+        pb.set_message("resolving…");
+        // Animate the spinner independently of the ping interval.
+        pb.enable_steady_tick(Duration::from_millis(80));
+
+        let id = PingIdentifier(base_id.wrapping_add(i as u16));
+
+        tasks.push(tokio::spawn(ping_loop(
+            host,
+            id,
+            pb,
+            multi.clone(),
+            interval,
+            timeout,
+        )));
+    }
+
+    // All tasks loop forever; awaiting them keeps main alive until Ctrl-C.
+    for task in tasks {
+        let _ = task.await;
+    }
+
+    Ok(())
+}
+
+/// Resolves the host, then pings it in a loop, updating `pb` in place for
+/// successes and printing persistent failure lines via `multi`.
+async fn ping_loop(
+    host: String,
+    id: PingIdentifier,
+    pb: ProgressBar,
+    multi: MultiProgress,
+    interval: Duration,
+    timeout: Duration,
+) {
+    let addr = match resolve_host(&host).await {
+        Ok(a) => {
+            pb.set_message(format!("resolved → {a}"));
+            a
+        }
+        Err(e) => {
+            pb.finish_with_message(format!("resolution failed: {e}"));
+            return;
+        }
+    };
+
     let icmp_kind = match addr {
         IpAddr::V4(_) => ICMP::V4,
         IpAddr::V6(_) => ICMP::V6,
     };
-    let client = Client::new(&Config::builder().kind(icmp_kind).build())
-        .context("creating ping client — may need CAP_NET_RAW or root")?;
 
-    // Use the process ID as the ICMP identifier to distinguish from other instances.
-    let id = PingIdentifier(std::process::id() as u16);
+    let client = match Client::new(&Config::builder().kind(icmp_kind).build()) {
+        Ok(c) => c,
+        Err(e) => {
+            pb.finish_with_message(format!("client error: {e}"));
+            return;
+        }
+    };
+
     let mut pinger = client.pinger(addr, id).await;
-    pinger.timeout(Duration::from_millis(args.timeout));
+    pinger.timeout(timeout);
 
-    let mut stdout = io::stdout();
-    let mut line_state = LineState::Fresh;
     let mut seq: u16 = 0;
 
     loop {
@@ -73,22 +127,17 @@ async fn main() -> anyhow::Result<()> {
         match pinger.ping(PingSequence(seq), &[0u8; 8]).await {
             Ok((_, rtt)) => {
                 let ms = rtt.as_secs_f64() * 1000.0;
-                print!("{OVERWRITE}{timestamp} {GREEN_OK} OK  rtt={ms:.1}ms");
-                stdout.flush()?;
-                line_state = LineState::InPlace;
+                pb.set_message(format!("{GREEN_OK}  rtt={ms:.1}ms"));
             }
             Err(e) => {
-                if line_state == LineState::InPlace {
-                    // Terminate the in-place line so the error starts on a fresh line.
-                    println!();
-                }
-                println!("{timestamp} {RED_FAIL} FAILED: {e}");
-                line_state = LineState::Fresh;
+                // Persistent line: accumulates above the spinner rows.
+                let _ = multi.println(format!("{timestamp} {host} {RED_FAIL}: {e}"));
+                pb.set_message(YELLOW_WAIT.to_string());
             }
         }
 
         seq = seq.wrapping_add(1);
-        tokio::time::sleep(Duration::from_millis(args.interval)).await;
+        tokio::time::sleep(interval).await;
     }
 }
 
