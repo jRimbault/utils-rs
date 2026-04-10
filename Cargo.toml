@@ -14,6 +14,6 @@ members = [
     "unc",
     "logic",
     "qr",
-    "xkcd_lock", "find_projects",
+    "xkcd_lock", "find_projects", "try-facet", "pingwatch",
 ]
 
