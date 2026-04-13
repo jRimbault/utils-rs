@@ -13,14 +13,7 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
 
     // Column width sized to the longest hostname so the status column aligns.
     let host_width = hosts.iter().map(|h| h.as_str().len()).max().unwrap_or(0);
-    let resolved_width = if hosts
-        .iter()
-        .any(|host| host.as_str().parse::<IpAddr>().is_err())
-    {
-        MAX_RESOLVED_TEXT_WIDTH
-    } else {
-        0
-    };
+    let initial_resolved_width = 0;
 
     let style_ok = make_style("green");
     let style_wait = make_style("yellow");
@@ -32,7 +25,12 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
         .map(|host| {
             let pb = multi.add(indicatif::ProgressBar::new_spinner());
             pb.set_style(style_wait.clone());
-            pb.set_prefix(render_prefix(host, host_width, resolved_width, None));
+            pb.set_prefix(render_prefix(
+                host,
+                host_width,
+                initial_resolved_width,
+                None,
+            ));
             pb.set_message("resolving...");
             pb.enable_steady_tick(Duration::from_millis(80));
             pb
@@ -43,6 +41,7 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
     // cloning and re-applying the same style on every ping event.
     let mut bar_is_ok = vec![false; bars.len()];
     let mut resolved_addrs = vec![None; bars.len()];
+    let mut resolved_width = resolved_text_width(&resolved_addrs);
 
     while let Some(ev) = rx.recv().await {
         let idx = ev.idx();
@@ -55,12 +54,18 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
             event::PingEvent::Resolved { addr, .. } => {
                 let display_addr = resolved_addr_for_display(&hosts[i], addr);
                 resolved_addrs[i] = display_addr;
-                bar.set_prefix(render_prefix(
-                    &hosts[i],
-                    host_width,
-                    resolved_width,
-                    display_addr,
-                ));
+                let next_resolved_width = resolved_text_width(&resolved_addrs);
+                if next_resolved_width != resolved_width {
+                    resolved_width = next_resolved_width;
+                    refresh_prefixes(&bars, &hosts, host_width, resolved_width, &resolved_addrs);
+                } else {
+                    bar.set_prefix(render_prefix(
+                        &hosts[i],
+                        host_width,
+                        resolved_width,
+                        display_addr,
+                    ));
+                }
                 bar.set_message("resolved");
             }
             event::PingEvent::ResolutionFailed { error, .. } => {
@@ -103,6 +108,93 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
             }
         }
     }
+}
+
+/// Builds a spinner `ProgressStyle` for the given terminal color keyword.
+fn make_style(color: &str) -> indicatif::ProgressStyle {
+    indicatif::ProgressStyle::default_spinner()
+        .tick_chars("✶✸✹✺✹✷")
+        .template(&format!("{{spinner:.{color}}} {{prefix}} {{msg}}"))
+        .expect("valid template")
+}
+
+fn resolved_addr_for_display(host: &types::Hostname, addr: IpAddr) -> Option<IpAddr> {
+    match host.as_str().parse::<IpAddr>() {
+        Ok(literal_addr) if literal_addr == addr => None,
+        _ => Some(addr),
+    }
+}
+
+fn refresh_prefixes(
+    bars: &[indicatif::ProgressBar],
+    hosts: &[types::Hostname],
+    host_width: usize,
+    resolved_width: usize,
+    resolved_addrs: &[Option<IpAddr>],
+) {
+    for ((bar, host), &resolved_addr) in bars.iter().zip(hosts.iter()).zip(resolved_addrs.iter()) {
+        bar.set_prefix(render_prefix(
+            host,
+            host_width,
+            resolved_width,
+            resolved_addr,
+        ));
+    }
+}
+
+fn render_prefix(
+    host: &types::Hostname,
+    host_width: usize,
+    resolved_width: usize,
+    resolved_addr: Option<IpAddr>,
+) -> String {
+    format!(
+        "{}{}",
+        render_host_text(host, host_width),
+        render_resolved_text(resolved_width, resolved_addr)
+            .map(|text| console::style(text).dim().to_string())
+            .unwrap_or_else(|| " ".repeat(resolved_width))
+    )
+}
+
+fn render_failure_prefix(
+    host: &types::Hostname,
+    host_width: usize,
+    resolved_width: usize,
+    resolved_addr: Option<IpAddr>,
+) -> String {
+    format!(
+        "{}{}",
+        console::style(render_host_text(host, host_width)).bold(),
+        render_resolved_text(resolved_width, resolved_addr)
+            .map(|text| console::style(text).dim().to_string())
+            .unwrap_or_else(|| " ".repeat(resolved_width))
+    )
+}
+
+fn render_host_text(host: &types::Hostname, host_width: usize) -> String {
+    format!("{:<host_width$}", host.as_str())
+}
+
+fn resolved_text_width(resolved_addrs: &[Option<IpAddr>]) -> usize {
+    resolved_addrs
+        .iter()
+        .flatten()
+        .map(|addr| format!(" ({addr})").len())
+        .max()
+        .unwrap_or(0)
+}
+
+fn render_resolved_text(resolved_width: usize, resolved_addr: Option<IpAddr>) -> Option<String> {
+    if resolved_width == 0 {
+        return None;
+    }
+    Some(format!(
+        "{:<resolved_width$}",
+        resolved_addr
+            .map(|addr| format!(" ({addr})"))
+            .unwrap_or_default()
+    ))
 }
 
 #[cfg(test)]
@@ -217,15 +309,16 @@ mod tests {
     fn shows_resolved_addr_for_hostname_inputs() {
         let host = "example.com".parse::<types::Hostname>().unwrap();
         let addr: IpAddr = "93.184.216.34".parse().unwrap();
+        let resolved_width = resolved_text_width(&[Some(addr)]);
 
         assert_eq!(resolved_addr_for_display(&host, addr), Some(addr));
         assert_eq!(render_host_text(&host, host.as_str().len()), "example.com");
         assert_eq!(
-            render_resolved_text(MAX_RESOLVED_TEXT_WIDTH, Some(addr)),
+            render_resolved_text(resolved_width, Some(addr)),
             Some(format!(
                 "{:<width$}",
                 format!(" ({addr})"),
-                width = MAX_RESOLVED_TEXT_WIDTH
+                width = resolved_width
             ))
         );
     }
@@ -235,83 +328,37 @@ mod tests {
         let host = "example.com".parse::<types::Hostname>().unwrap();
         let literal = "127.0.0.1".parse::<types::Hostname>().unwrap();
         let addr: IpAddr = "93.184.216.34".parse().unwrap();
+        let resolved_width = resolved_text_width(&[Some(addr)]);
 
         let with_addr = format!(
             "{}{}",
             render_host_text(&host, 11),
-            render_resolved_text(MAX_RESOLVED_TEXT_WIDTH, Some(addr)).unwrap()
+            render_resolved_text(resolved_width, Some(addr)).unwrap()
         );
         let without_addr = format!(
             "{}{}",
             render_host_text(&literal, 11),
-            render_resolved_text(MAX_RESOLVED_TEXT_WIDTH, None).unwrap()
+            render_resolved_text(resolved_width, None).unwrap()
         );
 
         assert_eq!(with_addr.len(), without_addr.len());
         assert!(with_addr.contains(&format!("({addr})")));
         assert!(!without_addr.contains('('));
     }
-}
 
-/// Builds a spinner `ProgressStyle` for the given terminal color keyword.
-fn make_style(color: &str) -> indicatif::ProgressStyle {
-    indicatif::ProgressStyle::default_spinner()
-        .tick_chars("✶✸✹✺✹✷")
-        .template(&format!("{{spinner:.{color}}} {{prefix}} {{msg}}"))
-        .expect("valid template")
-}
+    #[test]
+    fn resolved_width_tracks_longest_seen_addr() {
+        let ipv4: IpAddr = "93.184.216.34".parse().unwrap();
+        let ipv6: IpAddr = "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff".parse().unwrap();
 
-fn resolved_addr_for_display(host: &types::Hostname, addr: IpAddr) -> Option<IpAddr> {
-    match host.as_str().parse::<IpAddr>() {
-        Ok(literal_addr) if literal_addr == addr => None,
-        _ => Some(addr),
+        assert_eq!(resolved_text_width(&[]), 0);
+        assert_eq!(
+            resolved_text_width(&[None, Some(ipv4)]),
+            format!(" ({ipv4})").len()
+        );
+        assert_eq!(
+            resolved_text_width(&[Some(ipv4), Some(ipv6)]),
+            format!(" ({ipv6})").len()
+        );
     }
 }
-
-fn render_prefix(
-    host: &types::Hostname,
-    host_width: usize,
-    resolved_width: usize,
-    resolved_addr: Option<IpAddr>,
-) -> String {
-    format!(
-        "{}{}",
-        render_host_text(host, host_width),
-        render_resolved_text(resolved_width, resolved_addr)
-            .map(|text| console::style(text).dim().to_string())
-            .unwrap_or_else(|| " ".repeat(resolved_width))
-    )
-}
-
-fn render_failure_prefix(
-    host: &types::Hostname,
-    host_width: usize,
-    resolved_width: usize,
-    resolved_addr: Option<IpAddr>,
-) -> String {
-    format!(
-        "{}{}",
-        console::style(render_host_text(host, host_width)).bold(),
-        render_resolved_text(resolved_width, resolved_addr)
-            .map(|text| console::style(text).dim().to_string())
-            .unwrap_or_else(|| " ".repeat(resolved_width))
-    )
-}
-
-fn render_host_text(host: &types::Hostname, host_width: usize) -> String {
-    format!("{:<host_width$}", host.as_str())
-}
-
-fn render_resolved_text(resolved_width: usize, resolved_addr: Option<IpAddr>) -> Option<String> {
-    if resolved_width == 0 {
-        return None;
-    }
-    Some(format!(
-        "{:<resolved_width$}",
-        resolved_addr
-            .map(|addr| format!(" ({addr})"))
-            .unwrap_or_default()
-    ))
-}
-
-const MAX_RESOLVED_TEXT_WIDTH: usize = 42;

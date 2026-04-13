@@ -88,7 +88,11 @@ impl Args {
         let interval = resolve_duration(&matches, "interval", config.interval, 1000)?;
         let timeout = resolve_duration(&matches, "timeout", config.timeout, 2000)?;
 
-        Ok(Args { hosts, interval, timeout })
+        Ok(Args {
+            hosts,
+            interval,
+            timeout,
+        })
     }
 }
 
@@ -141,10 +145,10 @@ fn load_config(bin_name: &str) -> anyhow::Result<Config> {
 /// Respects `$XDG_CONFIG_HOME` when it is set to an absolute path;
 /// falls back to `$HOME/.config` per the XDG Base Directory Specification.
 fn xdg_config_dir() -> std::path::PathBuf {
-    if let Some(dir) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from) {
-        if dir.is_absolute() {
-            return dir;
-        }
+    if let Some(dir) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from)
+        && dir.is_absolute()
+    {
+        return dir;
     }
     let home = std::env::var_os("HOME").unwrap_or_default();
     std::path::PathBuf::from(home).join(".config")
