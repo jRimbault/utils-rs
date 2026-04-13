@@ -88,3 +88,84 @@ pub async fn run_worker(cfg: WorkerConfig, tx: mpsc::Sender<PingEvent>) {
         tokio::time::sleep(cfg.interval).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        event::PingEvent,
+        types::{HostIdx, Hostname},
+    };
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    fn cfg(host: &str) -> WorkerConfig {
+        WorkerConfig {
+            host: host.parse::<Hostname>().unwrap(),
+            idx: HostIdx::new(0),
+            id: PingIdentifier(42),
+            interval: Duration::from_millis(100),
+            timeout: Duration::from_millis(200),
+        }
+    }
+
+    // Resolution failure: worker emits exactly one ResolutionFailed event, then exits
+    // (the sender drop closes the channel, confirming the task has returned).
+    #[tokio::test]
+    async fn invalid_host_emits_resolution_failed_and_exits() {
+        let (tx, mut rx) = mpsc::channel(8);
+        tokio::spawn(run_worker(
+            cfg("this.host.does.not.exist.invalid"),
+            tx,
+        ));
+
+        let event = rx.recv().await.expect("expected at least one event");
+        assert!(
+            matches!(event, PingEvent::ResolutionFailed { .. }),
+            "expected ResolutionFailed, got {event:?}"
+        );
+        // Channel must drain: worker returned, all senders dropped.
+        assert!(
+            rx.recv().await.is_none(),
+            "worker should have exited after resolution failure"
+        );
+    }
+
+    // Happy DNS path (IP literal, no actual DNS round-trip): first event is Resolved.
+    #[tokio::test]
+    async fn valid_ip_emits_resolved_then_ping_result() {
+        let (tx, mut rx) = mpsc::channel(16);
+        tokio::spawn(run_worker(cfg("127.0.0.1"), tx));
+
+        let first = rx.recv().await.expect("expected Resolved event");
+        assert!(
+            matches!(first, PingEvent::Resolved { .. }),
+            "expected Resolved, got {first:?}"
+        );
+        // Second event is either Success (CAP_NET_RAW available) or ClientError (not).
+        let second = rx.recv().await.expect("expected ping result event");
+        assert!(
+            matches!(
+                second,
+                PingEvent::Success { .. } | PingEvent::ClientError { .. } | PingEvent::Failure { .. }
+            ),
+            "expected Success or ClientError or Failure, got {second:?}"
+        );
+    }
+
+    // Backpressure / cancellation: when the receiver is dropped the worker must
+    // detect the closed channel and exit rather than spin indefinitely.
+    #[tokio::test]
+    async fn worker_exits_when_receiver_dropped() {
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+
+        // Worst case: one ping timeout (200 ms) before the worker notices the channel is gone.
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            run_worker(cfg("127.0.0.1"), tx),
+        )
+        .await
+        .expect("worker should exit after detecting closed channel");
+    }
+}

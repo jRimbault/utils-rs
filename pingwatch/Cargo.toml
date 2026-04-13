@@ -3,6 +3,9 @@ name = "pingwatch"
 version = "0.1.0"
 edition = "2024"
 
+[dev-dependencies]
+rstest = "0.26"
+
 [dependencies]
 anyhow = "1"
 ctrlc = "3"

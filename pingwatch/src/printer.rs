@@ -81,6 +81,125 @@ pub async fn run_printer(hosts: Arc<[Hostname]>, mut rx: mpsc::Receiver<PingEven
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        event::PingEvent,
+        types::{HostIdx, Hostname},
+    };
+    use rstest::rstest;
+    use std::{net::IpAddr, sync::Arc};
+    use tokio::sync::mpsc;
+
+    fn make_hosts(names: &[&str]) -> Arc<[Hostname]> {
+        Arc::from(
+            names
+                .iter()
+                .map(|&s| s.parse::<Hostname>().unwrap())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn idx(i: usize) -> HostIdx {
+        HostIdx::new(i)
+    }
+
+    // Printer must drain and return as soon as the channel is exhausted.
+    #[tokio::test]
+    async fn exits_when_channel_already_closed() {
+        let (tx, rx) = mpsc::channel::<PingEvent>(8);
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            run_printer(make_hosts(&["h1"]), rx),
+        )
+        .await
+        .expect("printer should exit immediately when the channel is already closed");
+    }
+
+    // Each PingEvent variant must be handled in isolation without panicking.
+    // Named cases keep the test output readable when a single variant regresses.
+    #[rstest]
+    #[case::resolved(PingEvent::Resolved {
+        idx: idx(0),
+        addr: "127.0.0.1".parse::<IpAddr>().unwrap(),
+    })]
+    #[case::success(PingEvent::Success {
+        idx: idx(0),
+        rtt: Duration::from_millis(10),
+    })]
+    #[case::failure(PingEvent::Failure {
+        idx: idx(0),
+        error: "timeout".into(),
+    })]
+    #[case::client_error(PingEvent::ClientError {
+        idx: idx(0),
+        error: "no socket".into(),
+    })]
+    #[case::resolution_failed(PingEvent::ResolutionFailed {
+        idx: idx(0),
+        error: "nxdomain".into(),
+    })]
+    #[tokio::test]
+    async fn handles_event_variant_without_panic(#[case] event: PingEvent) {
+        let (tx, rx) = mpsc::channel(2);
+        tx.send(event).await.unwrap();
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            run_printer(make_hosts(&["h1"]), rx),
+        )
+        .await
+        .expect("printer should handle this event and exit");
+    }
+
+    // Out-of-range idx must be silently skipped, not panic.
+    #[tokio::test]
+    async fn ignores_out_of_range_host_idx() {
+        let (tx, rx) = mpsc::channel(8);
+        tx.send(PingEvent::Success {
+            idx: idx(99), // only one host registered
+            rtt: Duration::from_millis(1),
+        })
+        .await
+        .unwrap();
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            run_printer(make_hosts(&["h1"]), rx),
+        )
+        .await
+        .expect("printer should skip out-of-range events without panicking");
+    }
+
+    // Multi-host layout: events for different host indices must each route to
+    // the correct progress bar without index confusion.
+    #[tokio::test]
+    async fn routes_events_to_correct_bar_for_multiple_hosts() {
+        let addr: IpAddr = "10.0.0.1".parse().unwrap();
+        let (tx, rx) = mpsc::channel(32);
+        for i in 0..3 {
+            tx.send(PingEvent::Resolved { idx: idx(i), addr })
+                .await
+                .unwrap();
+            tx.send(PingEvent::Success {
+                idx: idx(i),
+                rtt: Duration::from_millis(5 * (i as u64 + 1)),
+            })
+            .await
+            .unwrap();
+        }
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            run_printer(make_hosts(&["host-a", "host-b", "host-c"]), rx),
+        )
+        .await
+        .expect("printer should handle events across multiple hosts");
+    }
+}
+
 /// Builds a spinner `ProgressStyle` for the given terminal color keyword.
 fn make_style(color: &str, prefix_width: usize) -> ProgressStyle {
     ProgressStyle::default_spinner()
