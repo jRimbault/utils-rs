@@ -1,5 +1,6 @@
-use crate::types::HostIdx;
 use std::{net::IpAddr, time::Duration};
+
+use crate::types;
 
 /// Every piece of information the printer task needs to update its display.
 ///
@@ -8,23 +9,20 @@ use std::{net::IpAddr, time::Duration};
 #[derive(Debug)]
 pub enum PingEvent {
     /// DNS resolution succeeded; the bar should show the resolved address.
-    Resolved { idx: HostIdx, addr: IpAddr },
+    Resolved { idx: types::HostIdx, addr: IpAddr },
     /// DNS resolution failed; the bar should be finished with an error message.
-    ResolutionFailed { idx: HostIdx, error: String },
-    /// The ICMP client could not be created; the bar should be finished.
-    ClientError { idx: HostIdx, error: String },
+    ResolutionFailed { idx: types::HostIdx, error: String },
     /// A ping round-trip succeeded with the given latency.
-    Success { idx: HostIdx, rtt: Duration },
+    Success { idx: types::HostIdx, rtt: Duration },
     /// A ping failed; a persistent timestamped line should be printed above the bars.
-    Failure { idx: HostIdx, error: String },
+    Failure { idx: types::HostIdx, error: String },
 }
 
 impl PingEvent {
-    pub fn idx(&self) -> HostIdx {
+    pub fn idx(&self) -> types::HostIdx {
         match self {
             Self::Resolved { idx, .. }
             | Self::ResolutionFailed { idx, .. }
-            | Self::ClientError { idx, .. }
             | Self::Success { idx, .. }
             | Self::Failure { idx, .. } => *idx,
         }

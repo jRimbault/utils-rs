@@ -24,16 +24,14 @@
 //! `.await` the send and the printer `.await` each recv.
 
 pub mod cli;
+mod client;
 mod event;
 mod printer;
 pub mod types;
 mod worker;
 
 use std::sync::Arc;
-use surge_ping::PingIdentifier;
 use tokio::sync::mpsc;
-
-use crate::types::HostIdx;
 
 /// Install a Ctrl+C handler that restores the terminal cursor.
 ///
@@ -61,6 +59,10 @@ pub async fn run(args: cli::Args) -> anyhow::Result<()> {
         async move { printer::run_printer(hosts, rx).await }
     });
 
+    // One ICMP client per protocol version, shared across all workers.
+    // Each Client opens a single raw socket; sharing avoids N duplicate sockets.
+    let clients = client::PingClients::new()?;
+
     // Derive a unique ICMP echo identifier per host from the process ID so
     // concurrent pingers don't respond to each other's replies.
     let base_id = std::process::id() as u16;
@@ -69,11 +71,11 @@ pub async fn run(args: cli::Args) -> anyhow::Result<()> {
         .iter()
         .enumerate()
         .map(|(i, host)| {
-            let id = PingIdentifier(base_id.wrapping_add(i as u16));
             let cfg = worker::WorkerConfig {
                 host: host.clone(),
-                idx: HostIdx::new(i),
-                id,
+                idx: types::HostIdx::new(i),
+                id: surge_ping::PingIdentifier(base_id.wrapping_add(i as u16)),
+                clients: clients.clone(),
                 interval,
                 timeout,
             };
