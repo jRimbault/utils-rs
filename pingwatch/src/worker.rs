@@ -8,9 +8,6 @@ use surge_ping::{Client, Config, ICMP, PingIdentifier, PingSequence};
 use tokio::sync::mpsc;
 
 /// Per-worker configuration: host identity and timing parameters.
-///
-/// Groups the 5 invariant pieces of state a worker needs so the call site
-/// doesn't pass a 6-argument spread.
 pub struct WorkerConfig {
     pub host: Hostname,
     pub idx: HostIdx,

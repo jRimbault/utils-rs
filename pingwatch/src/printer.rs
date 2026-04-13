@@ -19,9 +19,8 @@ pub async fn run_printer(hosts: Arc<[Hostname]>, mut rx: mpsc::Receiver<PingEven
     let style_ok = make_style("green", prefix_width);
     let style_wait = make_style("yellow", prefix_width);
 
-    // Create one spinner row per host, in declaration order, and start
-    // animation immediately. The bars begin in "resolving" state because the
-    // first event a worker sends is always Resolved or ResolutionFailed.
+    // Initial state is "resolving" because the first event from every worker
+    // is always Resolved or ResolutionFailed.
     let bars: Vec<ProgressBar> = hosts
         .iter()
         .map(|host| {

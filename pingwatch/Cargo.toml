@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+ctrlc = "3"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 console = "0.16"
