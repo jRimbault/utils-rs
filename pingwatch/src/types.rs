@@ -1,5 +1,8 @@
 //! Domain-level newtypes shared across the crate.
 
+use anyhow::Context as _;
+use std::net::IpAddr;
+
 /// A hostname or IP-address string, validated at the CLI boundary.
 #[derive(Clone, Debug)]
 pub struct Hostname(String);
@@ -7,6 +10,24 @@ pub struct Hostname(String);
 impl Hostname {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Resolves this hostname or IP-address string to its first `IpAddr`.
+    ///
+    /// Tries a direct parse first (handles bare IP literals without a DNS
+    /// round-trip), then falls back to `tokio::net::lookup_host`.
+    pub async fn resolve(&self) -> anyhow::Result<IpAddr> {
+        let host = self.0.as_str();
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            return Ok(ip);
+        }
+        let mut addrs = tokio::net::lookup_host(format!("{host}:0"))
+            .await
+            .with_context(|| format!("DNS lookup for '{host}'"))?;
+        addrs
+            .next()
+            .map(|sa| sa.ip())
+            .ok_or_else(|| anyhow::anyhow!("no addresses found for '{host}'"))
     }
 }
 
