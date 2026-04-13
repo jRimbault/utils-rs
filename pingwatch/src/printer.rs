@@ -64,12 +64,21 @@ pub async fn run_printer(hosts: Arc<[Hostname]>, mut rx: mpsc::Receiver<PingEven
             PingEvent::Failure { error, .. } => {
                 // Persistent line: accumulates above the spinner rows in the
                 // scroll buffer and is never overwritten.
+                //
+                // Layout: dim timestamp  bold-hostname-column  red-FAILED  error
+                // Padding the host to prefix_width aligns it with the spinners
+                // above and lets the eye scan a stable hostname column.
+                // The timestamp is dimmed so it recedes; hostname and FAILED pop.
                 let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
                 // Safe: hosts.len() == bars.len(); bounds already checked above.
                 let host = &hosts[idx.as_usize()];
+                // Pad before styling: ANSI escape codes would throw off width math.
+                let host_col = format!("{:<prefix_width$}", host.as_str());
                 let _ = multi.println(format!(
-                    "{timestamp} {host} {}: {error}",
-                    style("FAILED").red()
+                    "{}  {}  {}  {error}",
+                    style(timestamp).dim(),
+                    style(host_col).bold(),
+                    style("FAILED").red().bold(),
                 ));
                 if bar_is_ok[idx.as_usize()] {
                     bar.set_style(style_wait.clone());
