@@ -42,6 +42,7 @@ use crate::types::HostIdx;
 pub fn setup_ctrlc_handler() -> anyhow::Result<()> {
     ctrlc::set_handler(|| {
         let _ = console::Term::stdout().show_cursor();
+        std::process::exit(0);
     })?;
     Ok(())
 }
