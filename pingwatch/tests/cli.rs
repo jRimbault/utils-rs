@@ -1,25 +1,14 @@
+mod support;
+
 use pingwatch::cli::Args;
 use rstest::rstest;
-use std::path::Path;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Write a minimal config file at `<config_home>/pingwatch/config.toml`.
-fn write_config(config_home: &Path, content: &str) {
-    let dir = config_home.join("pingwatch");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("config.toml"), content).unwrap();
-}
+use support::IntegrationFixture;
 
 /// Call `Args::parse_from("pingwatch", argv)` with `XDG_CONFIG_HOME` pointing
 /// at an empty temp directory so config-file values never leak into CLI-only tests.
 fn parse_no_config(argv: &[&str]) -> anyhow::Result<Args> {
-    let dir = tempfile::tempdir().unwrap();
-    // SAFETY: single-threaded test binary; no other thread reads this var concurrently.
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
-    Args::parse_from("pingwatch", argv)
+    let fixture = IntegrationFixture::new();
+    fixture.parse(argv)
 }
 
 // ---------------------------------------------------------------------------
@@ -80,22 +69,16 @@ fn invalid_args_rejected(#[case] argv: &[&str]) {
 
 #[test]
 fn config_hosts_used_when_none_on_cli() {
-    let dir = tempfile::tempdir().unwrap();
-    write_config(dir.path(), "hosts = [\"example.com\"]\n");
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
-
-    let args = Args::parse_from("pingwatch", ["pingwatch"]).unwrap();
+    let fixture = IntegrationFixture::with_config("hosts = [\"example.com\"]\n");
+    let args = fixture.parse(["pingwatch"]).unwrap();
     assert_eq!(args.hosts.len(), 1);
     assert_eq!(args.hosts[0].as_str(), "example.com");
 }
 
 #[test]
 fn cli_hosts_override_config_hosts() {
-    let dir = tempfile::tempdir().unwrap();
-    write_config(dir.path(), "hosts = [\"config-host.example\"]\n");
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
-
-    let args = Args::parse_from("pingwatch", ["pingwatch", "cli-host.example"]).unwrap();
+    let fixture = IntegrationFixture::with_config("hosts = [\"config-host.example\"]\n");
+    let args = fixture.parse(["pingwatch", "cli-host.example"]).unwrap();
     assert_eq!(args.hosts.len(), 1);
     assert_eq!(args.hosts[0].as_str(), "cli-host.example");
 }
@@ -116,11 +99,8 @@ fn config_timing_used_when_flags_absent(
     #[case] expected_interval_ms: u64,
     #[case] expected_timeout_ms: u64,
 ) {
-    let dir = tempfile::tempdir().unwrap();
-    write_config(dir.path(), config);
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
-
-    let args = Args::parse_from("pingwatch", ["pingwatch", "host"]).unwrap();
+    let fixture = IntegrationFixture::with_config(config);
+    let args = fixture.parse(["pingwatch", "host"]).unwrap();
     assert_eq!(args.interval.as_millis() as u64, expected_interval_ms);
     assert_eq!(args.timeout.as_millis() as u64, expected_timeout_ms);
 }
@@ -137,11 +117,8 @@ fn cli_timing_overrides_config(
     #[case] expected_interval_ms: u64,
     #[case] expected_timeout_ms: u64,
 ) {
-    let dir = tempfile::tempdir().unwrap();
-    write_config(dir.path(), config);
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
-
-    let args = Args::parse_from("pingwatch", argv).unwrap();
+    let fixture = IntegrationFixture::with_config(config);
+    let args = fixture.parse(argv).unwrap();
     assert_eq!(args.interval.as_millis() as u64, expected_interval_ms);
     assert_eq!(args.timeout.as_millis() as u64, expected_timeout_ms);
 }
@@ -151,9 +128,6 @@ fn cli_timing_overrides_config(
 #[case("interval = 0\n")]
 #[case("timeout = 0\n")]
 fn invalid_config_timing_rejected(#[case] config: &str) {
-    let dir = tempfile::tempdir().unwrap();
-    write_config(dir.path(), config);
-    unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
-
-    assert!(Args::parse_from("pingwatch", ["pingwatch", "host"]).is_err());
+    let fixture = IntegrationFixture::with_config(config);
+    assert!(fixture.parse(["pingwatch", "host"]).is_err());
 }
