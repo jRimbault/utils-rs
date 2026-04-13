@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 
 use crate::{event, types};
@@ -12,10 +12,18 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
     let multi = indicatif::MultiProgress::new();
 
     // Column width sized to the longest hostname so the status column aligns.
-    let prefix_width = hosts.iter().map(|h| h.as_str().len()).max().unwrap_or(0);
+    let host_width = hosts.iter().map(|h| h.as_str().len()).max().unwrap_or(0);
+    let resolved_width = if hosts
+        .iter()
+        .any(|host| host.as_str().parse::<IpAddr>().is_err())
+    {
+        MAX_RESOLVED_TEXT_WIDTH
+    } else {
+        0
+    };
 
-    let style_ok = make_style("green", prefix_width);
-    let style_wait = make_style("yellow", prefix_width);
+    let style_ok = make_style("green");
+    let style_wait = make_style("yellow");
 
     // Initial state is "resolving" because the first event from every worker
     // is always Resolved or ResolutionFailed.
@@ -24,7 +32,7 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
         .map(|host| {
             let pb = multi.add(indicatif::ProgressBar::new_spinner());
             pb.set_style(style_wait.clone());
-            pb.set_prefix(host.to_string());
+            pb.set_prefix(render_prefix(host, host_width, resolved_width, None));
             pb.set_message("resolving...");
             pb.enable_steady_tick(Duration::from_millis(80));
             pb
@@ -34,50 +42,62 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
     // Track whether each bar is currently showing the "ok" style to avoid
     // cloning and re-applying the same style on every ping event.
     let mut bar_is_ok = vec![false; bars.len()];
+    let mut resolved_addrs = vec![None; bars.len()];
 
     while let Some(ev) = rx.recv().await {
         let idx = ev.idx();
+        let i = idx.as_usize();
         // Defensive: skip events with an out-of-range index rather than panic.
-        let Some(bar) = bars.get(idx.as_usize()) else {
+        let Some(bar) = bars.get(i) else {
             continue;
         };
         match ev {
             event::PingEvent::Resolved { addr, .. } => {
-                bar.set_message(format!("resolved → {addr}"));
+                let display_addr = resolved_addr_for_display(&hosts[i], addr);
+                resolved_addrs[i] = display_addr;
+                bar.set_prefix(render_prefix(
+                    &hosts[i],
+                    host_width,
+                    resolved_width,
+                    display_addr,
+                ));
+                bar.set_message("resolved");
             }
             event::PingEvent::ResolutionFailed { error, .. } => {
                 bar.finish_with_message(format!("resolution failed: {error}"));
             }
             event::PingEvent::Success { rtt, .. } => {
                 let ms = rtt.as_secs_f64() * 1000.0;
-                if !bar_is_ok[idx.as_usize()] {
+                if !bar_is_ok[i] {
                     bar.set_style(style_ok.clone());
-                    bar_is_ok[idx.as_usize()] = true;
+                    bar_is_ok[i] = true;
                 }
-                bar.set_message(format!("rtt={ms:.1}ms"));
+                bar.set_message(format!(
+                    "{}{ms:.1}ms",
+                    console::style("rtt=").dim().italic(),
+                ));
             }
             event::PingEvent::Failure { error, .. } => {
                 // Persistent line: accumulates above the spinner rows in the
                 // scroll buffer and is never overwritten.
                 //
-                // Layout: dim timestamp  bold-hostname-column  red-FAILED  error
-                // Padding the host to prefix_width aligns it with the spinners
-                // above and lets the eye scan a stable hostname column.
-                // The timestamp is dimmed so it recedes; hostname and FAILED pop.
+                // Layout: dim timestamp  bold host/address prefix  red-FAILED  error.
+                // The prefix uses the same padded host column as the spinners,
+                // and includes the resolved address when it adds information.
+                // The timestamp is dimmed so it recedes; prefix and FAILED pop.
                 let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
                 // Safe: hosts.len() == bars.len(); bounds already checked above.
-                let host = &hosts[idx.as_usize()];
-                // Pad before styling: ANSI escape codes would throw off width math.
-                let host_col = format!("{:<prefix_width$}", host.as_str());
+                let prefix =
+                    render_failure_prefix(&hosts[i], host_width, resolved_width, resolved_addrs[i]);
                 let _ = multi.println(format!(
                     "{}  {}  {}  {error}",
                     console::style(timestamp).dim(),
-                    console::style(host_col).bold(),
+                    prefix,
                     console::style("FAILED").red().bold(),
                 ));
-                if bar_is_ok[idx.as_usize()] {
+                if bar_is_ok[i] {
                     bar.set_style(style_wait.clone());
-                    bar_is_ok[idx.as_usize()] = false;
+                    bar_is_ok[i] = false;
                 }
                 bar.set_message(console::style("waiting").yellow().to_string());
             }
@@ -88,8 +108,6 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::net::IpAddr;
 
     fn make_hosts(names: &[&str]) -> Arc<[types::Hostname]> {
         Arc::from(
@@ -184,14 +202,116 @@ mod tests {
         .await
         .expect("printer should handle events across multiple hosts");
     }
+
+    #[test]
+    fn hides_resolved_addr_for_ip_literal_inputs() {
+        let host = "127.0.0.1".parse::<types::Hostname>().unwrap();
+        let addr: IpAddr = "127.0.0.1".parse().unwrap();
+
+        assert_eq!(resolved_addr_for_display(&host, addr), None);
+        assert_eq!(render_host_text(&host, host.as_str().len()), "127.0.0.1");
+        assert_eq!(render_resolved_text(0, None), None);
+    }
+
+    #[test]
+    fn shows_resolved_addr_for_hostname_inputs() {
+        let host = "example.com".parse::<types::Hostname>().unwrap();
+        let addr: IpAddr = "93.184.216.34".parse().unwrap();
+
+        assert_eq!(resolved_addr_for_display(&host, addr), Some(addr));
+        assert_eq!(render_host_text(&host, host.as_str().len()), "example.com");
+        assert_eq!(
+            render_resolved_text(MAX_RESOLVED_TEXT_WIDTH, Some(addr)),
+            Some(format!(
+                "{:<width$}",
+                format!(" ({addr})"),
+                width = MAX_RESOLVED_TEXT_WIDTH
+            ))
+        );
+    }
+
+    #[test]
+    fn keeps_prefix_width_stable_with_optional_resolved_addr() {
+        let host = "example.com".parse::<types::Hostname>().unwrap();
+        let literal = "127.0.0.1".parse::<types::Hostname>().unwrap();
+        let addr: IpAddr = "93.184.216.34".parse().unwrap();
+
+        let with_addr = format!(
+            "{}{}",
+            render_host_text(&host, 11),
+            render_resolved_text(MAX_RESOLVED_TEXT_WIDTH, Some(addr)).unwrap()
+        );
+        let without_addr = format!(
+            "{}{}",
+            render_host_text(&literal, 11),
+            render_resolved_text(MAX_RESOLVED_TEXT_WIDTH, None).unwrap()
+        );
+
+        assert_eq!(with_addr.len(), without_addr.len());
+        assert!(with_addr.contains(&format!("({addr})")));
+        assert!(!without_addr.contains('('));
+    }
 }
 
 /// Builds a spinner `ProgressStyle` for the given terminal color keyword.
-fn make_style(color: &str, prefix_width: usize) -> indicatif::ProgressStyle {
+fn make_style(color: &str) -> indicatif::ProgressStyle {
     indicatif::ProgressStyle::default_spinner()
         .tick_chars("✶✸✹✺✹✷")
-        .template(&format!(
-            "{{spinner:.{color}}} {{prefix:<{prefix_width}}} {{msg}}"
-        ))
+        .template(&format!("{{spinner:.{color}}} {{prefix}} {{msg}}"))
         .expect("valid template")
 }
+
+fn resolved_addr_for_display(host: &types::Hostname, addr: IpAddr) -> Option<IpAddr> {
+    match host.as_str().parse::<IpAddr>() {
+        Ok(literal_addr) if literal_addr == addr => None,
+        _ => Some(addr),
+    }
+}
+
+fn render_prefix(
+    host: &types::Hostname,
+    host_width: usize,
+    resolved_width: usize,
+    resolved_addr: Option<IpAddr>,
+) -> String {
+    format!(
+        "{}{}",
+        render_host_text(host, host_width),
+        render_resolved_text(resolved_width, resolved_addr)
+            .map(|text| console::style(text).dim().to_string())
+            .unwrap_or_else(|| " ".repeat(resolved_width))
+    )
+}
+
+fn render_failure_prefix(
+    host: &types::Hostname,
+    host_width: usize,
+    resolved_width: usize,
+    resolved_addr: Option<IpAddr>,
+) -> String {
+    format!(
+        "{}{}",
+        console::style(render_host_text(host, host_width)).bold(),
+        render_resolved_text(resolved_width, resolved_addr)
+            .map(|text| console::style(text).dim().to_string())
+            .unwrap_or_else(|| " ".repeat(resolved_width))
+    )
+}
+
+fn render_host_text(host: &types::Hostname, host_width: usize) -> String {
+    format!("{:<host_width$}", host.as_str())
+}
+
+fn render_resolved_text(resolved_width: usize, resolved_addr: Option<IpAddr>) -> Option<String> {
+    if resolved_width == 0 {
+        return None;
+    }
+    Some(format!(
+        "{:<resolved_width$}",
+        resolved_addr
+            .map(|addr| format!(" ({addr})"))
+            .unwrap_or_default()
+    ))
+}
+
+const MAX_RESOLVED_TEXT_WIDTH: usize = 42;
