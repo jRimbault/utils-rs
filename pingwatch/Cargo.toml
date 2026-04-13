@@ -3,8 +3,13 @@ name = "pingwatch"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "pingwatch"
+path = "src/main.rs"
+
 [dev-dependencies]
 rstest = "0.26"
+tempfile = "3"
 
 [dependencies]
 anyhow = "1"
@@ -15,3 +20,5 @@ console = "0.16"
 indicatif = "0.18"
 surge-ping = "0.8"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time", "net"] }
+toml_edit = { version = "0.25.11", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }

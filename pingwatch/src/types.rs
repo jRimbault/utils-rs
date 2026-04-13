@@ -4,7 +4,7 @@ use anyhow::Context as _;
 use std::net::IpAddr;
 
 /// A hostname or IP-address string, validated at the CLI boundary.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct Hostname(String);
 
 impl Hostname {
