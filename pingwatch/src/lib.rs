@@ -27,6 +27,7 @@ pub mod cli;
 mod client;
 mod event;
 mod printer;
+pub mod spinner_style;
 pub mod types;
 mod worker;
 
@@ -48,6 +49,7 @@ pub fn setup_ctrlc_handler() -> anyhow::Result<()> {
 pub async fn run(args: cli::Args) -> anyhow::Result<()> {
     let hosts: Arc<[types::Hostname]> = Arc::from(args.hosts);
     let interval = args.interval;
+    let spinner_style = args.spinner_style;
     let timeout = args.timeout;
 
     // Bounded channel: workers back-pressure when the printer lags.
@@ -56,7 +58,7 @@ pub async fn run(args: cli::Args) -> anyhow::Result<()> {
 
     let printer = tokio::spawn({
         let hosts = Arc::clone(&hosts);
-        async move { printer::run_printer(hosts, rx).await }
+        async move { printer::run_printer(hosts, spinner_style, rx).await }
     });
 
     // One ICMP client per protocol version, shared across all workers.

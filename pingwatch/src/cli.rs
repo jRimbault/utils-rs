@@ -1,4 +1,4 @@
-use crate::types::Hostname;
+use crate::{spinner_style::SpinnerStyle, types::Hostname};
 use anyhow::Context as _;
 use std::time::Duration;
 
@@ -15,6 +15,8 @@ struct Config {
     interval: Option<u64>,
     /// Per-ping timeout in milliseconds.
     timeout: Option<u64>,
+    /// Spinner style preset name from cli-spinners.
+    spinner_style: Option<SpinnerStyle>,
 }
 
 /// Ping one or more hosts simultaneously, showing live status in a TUI.
@@ -36,6 +38,9 @@ pub struct Args {
     /// Per-ping timeout in milliseconds
     #[arg(short, long, default_value = "2000", value_parser = parse_millis)]
     pub timeout: Duration,
+    /// Spinner style preset from cli-spinners
+    #[arg(long, value_enum, default_value = "dots14")]
+    pub spinner_style: SpinnerStyle,
 }
 
 impl Args {
@@ -55,7 +60,7 @@ impl Args {
         I: IntoIterator<Item = T>,
         T: Into<std::ffi::OsString> + Clone,
     {
-        let config = load_config(bin_name).unwrap_or_default();
+        let config = load_config(bin_name)?;
 
         let matches = <Self as clap::CommandFactory>::command()
             .try_get_matches_from(argv)
@@ -87,11 +92,18 @@ impl Args {
 
         let interval = resolve_duration(&matches, "interval", config.interval, 1000)?;
         let timeout = resolve_duration(&matches, "timeout", config.timeout, 2000)?;
+        let spinner_style = resolve_spinner_style(
+            &matches,
+            "spinner_style",
+            config.spinner_style,
+            SpinnerStyle::Dots14,
+        );
 
         Ok(Args {
             hosts,
             interval,
             timeout,
+            spinner_style,
         })
     }
 }
@@ -123,6 +135,24 @@ fn resolve_duration(
     }
 
     Ok(Duration::from_millis(default_ms))
+}
+
+/// Resolve an enum argument: CLI (explicit) > config file value > built-in default.
+fn resolve_spinner_style(
+    matches: &clap::ArgMatches,
+    name: &str,
+    config_style: Option<SpinnerStyle>,
+    default_style: SpinnerStyle,
+) -> SpinnerStyle {
+    use clap::parser::ValueSource;
+
+    if matches.value_source(name) == Some(ValueSource::CommandLine) {
+        return *matches
+            .get_one::<SpinnerStyle>(name)
+            .expect("CommandLine source guarantees a value");
+    }
+
+    config_style.unwrap_or(default_style)
 }
 
 /// Load and deserialize the TOML config file.

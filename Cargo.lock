@@ -1767,12 +1767,16 @@ dependencies = [
  "clap 4.5.10",
  "console",
  "ctrlc",
+ "indexmap 2.14.0",
  "indicatif",
+ "reqwest",
  "rstest",
  "serde",
+ "serde_json",
  "surge-ping",
  "tempfile",
  "tokio",
+ "toml",
  "toml_edit",
 ]
 

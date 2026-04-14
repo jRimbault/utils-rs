@@ -1,6 +1,7 @@
 mod support;
 
 use pingwatch::cli::Args;
+use pingwatch::spinner_style::SpinnerStyle;
 use rstest::rstest;
 use support::IntegrationFixture;
 
@@ -60,6 +61,25 @@ fn timing_params(#[case] argv: &[&str], #[case] interval_ms: u64, #[case] timeou
 #[case(&["pingwatch", "--interval", "abc", "host"])]
 #[case(&["pingwatch", "--timeout",  "1s",  "host"])]
 fn invalid_args_rejected(#[case] argv: &[&str]) {
+    assert!(parse_no_config(argv).is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Spinner style — clap-level parsing and config precedence
+// ---------------------------------------------------------------------------
+
+#[rstest]
+#[case(&["pingwatch", "host"], SpinnerStyle::Dots14)]
+#[case(&["pingwatch", "--spinner-style", "star", "host"], SpinnerStyle::Star)]
+#[case(&["pingwatch", "--spinner-style", "dots8Bit", "host"], SpinnerStyle::Dots8Bit)]
+fn spinner_style_params(#[case] argv: &[&str], #[case] expected: SpinnerStyle) {
+    let args = parse_no_config(argv).unwrap();
+    assert_eq!(args.spinner_style, expected);
+}
+
+#[rstest]
+#[case(&["pingwatch", "--spinner-style", "not-a-style", "host"])]
+fn invalid_spinner_style_rejected(#[case] argv: &[&str]) {
     assert!(parse_no_config(argv).is_err());
 }
 
@@ -129,5 +149,27 @@ fn cli_timing_overrides_config(
 #[case("timeout = 0\n")]
 fn invalid_config_timing_rejected(#[case] config: &str) {
     let fixture = IntegrationFixture::with_config(config);
+    assert!(fixture.parse(["pingwatch", "host"]).is_err());
+}
+
+#[test]
+fn config_spinner_style_used_when_flag_absent() {
+    let fixture = IntegrationFixture::with_config("spinner_style = \"arc\"\n");
+    let args = fixture.parse(["pingwatch", "host"]).unwrap();
+    assert_eq!(args.spinner_style, SpinnerStyle::Arc);
+}
+
+#[test]
+fn cli_spinner_style_overrides_config_even_when_it_matches_the_default() {
+    let fixture = IntegrationFixture::with_config("spinner_style = \"arc\"\n");
+    let args = fixture
+        .parse(["pingwatch", "--spinner-style", "dots14", "host"])
+        .unwrap();
+    assert_eq!(args.spinner_style, SpinnerStyle::Dots14);
+}
+
+#[test]
+fn invalid_config_spinner_style_rejected() {
+    let fixture = IntegrationFixture::with_config("spinner_style = \"not-a-style\"\n");
     assert!(fixture.parse(["pingwatch", "host"]).is_err());
 }

@@ -1,0 +1,5 @@
+[upstream]
+owner = "sindresorhus"
+repo = "cli-spinners"
+revision = "82c51d1e9d07e0cf95247479414d52b67d4cf019"
+path = "spinners.json"

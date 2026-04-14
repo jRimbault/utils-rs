@@ -1,22 +1,26 @@
 use std::{net::IpAddr, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 
-use crate::{event, types};
+use crate::{event, spinner_style::SpinnerStyle, types};
 
 /// Owns all indicatif state and drives every display update from `PingEvent`s.
 ///
 /// Runs as an async task; `rx.recv().await` yields between events so the
 /// executor stays free. Returns when the channel is exhausted (all senders
 /// have been dropped).
-pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<event::PingEvent>) {
+pub async fn run_printer(
+    hosts: Arc<[types::Hostname]>,
+    spinner_style: SpinnerStyle,
+    mut rx: mpsc::Receiver<event::PingEvent>,
+) {
     let multi = indicatif::MultiProgress::new();
 
     // Column width sized to the longest hostname so the status column aligns.
     let host_width = hosts.iter().map(|h| h.as_str().len()).max().unwrap_or(0);
     let initial_resolved_width = 0;
 
-    let style_ok = make_style("green");
-    let style_wait = make_style("yellow");
+    let style_ok = make_style("green", spinner_style);
+    let style_wait = make_style("yellow", spinner_style);
 
     // Initial state is "resolving" because the first event from every worker
     // is always Resolved or ResolutionFailed.
@@ -32,7 +36,7 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
                 None,
             ));
             pb.set_message("resolving...");
-            pb.enable_steady_tick(Duration::from_millis(80));
+            pb.enable_steady_tick(Duration::from_millis(spinner_style.interval_ms()));
             pb
         })
         .collect();
@@ -111,9 +115,9 @@ pub async fn run_printer(hosts: Arc<[types::Hostname]>, mut rx: mpsc::Receiver<e
 }
 
 /// Builds a spinner `ProgressStyle` for the given terminal color keyword.
-fn make_style(color: &str) -> indicatif::ProgressStyle {
+fn make_style(color: &str, spinner_style: SpinnerStyle) -> indicatif::ProgressStyle {
     indicatif::ProgressStyle::default_spinner()
-        .tick_chars("✶✸✹✺✹✷")
+        .tick_strings(spinner_style.frames())
         .template(&format!("{{spinner:.{color}}} {{prefix}} {{msg}}"))
         .expect("valid template")
 }
@@ -219,9 +223,12 @@ mod tests {
     async fn exits_when_channel_already_closed() {
         let (tx, rx) = mpsc::channel::<event::PingEvent>(8);
         drop(tx);
-        tokio::time::timeout(Duration::from_secs(1), run_printer(make_hosts(&["h1"]), rx))
-            .await
-            .expect("printer should exit immediately when the channel is already closed");
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            run_printer(make_hosts(&["h1"]), SpinnerStyle::Dots, rx),
+        )
+        .await
+        .expect("printer should exit immediately when the channel is already closed");
     }
 
     // Each PingEvent variant must be handled in isolation without panicking.
@@ -248,9 +255,12 @@ mod tests {
         let (tx, rx) = mpsc::channel(2);
         tx.send(ev).await.unwrap();
         drop(tx);
-        tokio::time::timeout(Duration::from_secs(1), run_printer(make_hosts(&["h1"]), rx))
-            .await
-            .expect("printer should handle this event and exit");
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            run_printer(make_hosts(&["h1"]), SpinnerStyle::Dots, rx),
+        )
+        .await
+        .expect("printer should handle this event and exit");
     }
 
     // Out-of-range idx must be silently skipped, not panic.
@@ -264,9 +274,12 @@ mod tests {
         .await
         .unwrap();
         drop(tx);
-        tokio::time::timeout(Duration::from_secs(1), run_printer(make_hosts(&["h1"]), rx))
-            .await
-            .expect("printer should skip out-of-range events without panicking");
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            run_printer(make_hosts(&["h1"]), SpinnerStyle::Dots, rx),
+        )
+        .await
+        .expect("printer should skip out-of-range events without panicking");
     }
 
     // Multi-host layout: events for different host indices must each route to
@@ -289,7 +302,11 @@ mod tests {
         drop(tx);
         tokio::time::timeout(
             Duration::from_secs(2),
-            run_printer(make_hosts(&["host-a", "host-b", "host-c"]), rx),
+            run_printer(
+                make_hosts(&["host-a", "host-b", "host-c"]),
+                SpinnerStyle::Dots,
+                rx,
+            ),
         )
         .await
         .expect("printer should handle events across multiple hosts");
