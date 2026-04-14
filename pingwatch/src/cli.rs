@@ -21,11 +21,26 @@ struct Config {
 
 /// Ping one or more hosts simultaneously, showing live status in a TUI.
 ///
-/// The derive keeps the clap API intact (including `try_parse_from` used in
-/// tests); the inherent `parse(bin_name)` method shadows it for production
-/// use and adds config-file resolution.
+/// All arguments can be persisted in a TOML config file so they do not have
+/// to be repeated on every invocation. CLI arguments take precedence over
+/// config file values.
+///
+/// Config file location (in order of precedence):
+///
+///   $XDG_CONFIG_HOME/pingwatch/config.toml
+///   ~/.config/pingwatch/config.toml
+///
+/// Supported keys:
+///
+///   hosts        = ["example.com", "8.8.8.8"]   # list of hostnames or IPs
+///   interval     = 1000                         # milliseconds between pings
+///   timeout      = 2000                         # per-ping timeout in milliseconds
+///   spinner_style = "dots14"                    # spinner animation preset
+// The derive keeps the clap API intact (including `try_parse_from` used in
+// tests); the inherent `parse(bin_name)` method shadows it for production
+// use and adds config-file resolution.
 #[derive(clap::Parser)]
-#[command(version)]
+#[command(version, verbatim_doc_comment)]
 pub struct Args {
     /// Hosts to ping (1-10 hostnames or IP addresses)
     // `required` is omitted here so the config file can supply hosts;
@@ -64,7 +79,14 @@ impl Args {
 
         let matches = <Self as clap::CommandFactory>::command()
             .try_get_matches_from(argv)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|e| {
+                // Help and version requests are informational, not errors — print
+                // them and exit cleanly rather than surfacing as anyhow errors.
+                if !e.use_stderr() {
+                    e.exit();
+                }
+                anyhow::Error::from(e)
+            })?;
 
         // Hosts: CLI wins if any were provided, otherwise fall back to config.
         let cli_hosts: Vec<Hostname> = matches
