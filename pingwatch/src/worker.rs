@@ -41,8 +41,15 @@ pub async fn run_worker(cfg: WorkerConfig, tx: mpsc::Sender<event::PingEvent>) {
     let mut pinger = client.pinger(addr, cfg.id).await;
     pinger.timeout(cfg.timeout);
 
+    // Use a fixed-interval ticker instead of post-ping sleep so that RTT and
+    // processing time don't accumulate as drift. Delay behavior skips missed
+    // ticks (e.g. when a ping exceeds the interval) rather than bursting.
+    let mut ticker = tokio::time::interval(cfg.interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     let mut seq: u16 = 0;
     loop {
+        ticker.tick().await; // first tick fires immediately; subsequent ticks are interval-aligned
         match pinger.ping(surge_ping::PingSequence(seq), &[0u8; 8]).await {
             Ok((_, rtt)) => {
                 // Break when the printer has exited -- no point continuing.
@@ -68,7 +75,6 @@ pub async fn run_worker(cfg: WorkerConfig, tx: mpsc::Sender<event::PingEvent>) {
             }
         }
         seq = seq.wrapping_add(1);
-        tokio::time::sleep(cfg.interval).await;
     }
 }
 
