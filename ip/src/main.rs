@@ -1,4 +1,4 @@
-use color_eyre::{eyre::WrapErr, Help, SectionExt};
+use color_eyre::eyre::WrapErr;
 use std::net::IpAddr;
 
 /// This program helps getting your WAN address
@@ -27,15 +27,15 @@ impl Ip {
             Ip::V4 => "https://api.ipify.org/?format=text",
             Ip::V6 => "https://api64.ipify.org/?format=text",
         };
-        let response = ureq::get(url).call().wrap_err("calling the ipify API")?;
+        let mut response = ureq::get(url).call().wrap_err("calling the ipify API")?;
         let response = response
-            .into_string()
+            .body_mut()
+            .read_to_string()
             .wrap_err("converting ipify response into an UTF-8 string")?;
         let ip = response
             .trim()
             .parse()
-            .wrap_err("parsing response")
-            .section(response.header("ipify response body"))?;
+            .wrap_err("parsing response")?;
         Ok(ip)
     }
 }

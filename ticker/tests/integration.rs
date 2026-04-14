@@ -48,7 +48,7 @@ fn tick_exactly_10_times() -> ticker::Result<()> {
 
 #[test]
 fn interval_between_ticks_should_be_consistent() {
-    let eq = |a, b| (a + ms(30) > b && b + ms(30) > a);
+    let eq = |a, b| a + ms(30) > b && b + ms(30) > a;
     let ticker = Ticker::builder().interval(ms(100)).build().unwrap();
     let start = Instant::now();
     for (i, tick) in ticker.into_iter().enumerate().take(5) {

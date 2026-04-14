@@ -6,10 +6,10 @@ use tracing::Level;
 use tracing_subscriber::{util::SubscriberInitExt, EnvFilter, FmtSubscriber};
 
 #[derive(Parser, Clone, Debug)]
-#[clap(author, version)]
+#[command(author, version)]
 struct Args {
     url: reqwest::Url,
-    #[clap(parse(from_os_str), default_value = "out")]
+    #[arg(default_value = "out")]
     out_dir: PathBuf,
 }
 

@@ -5,7 +5,6 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use rand::Rng;
 use serde::Deserialize;
 
 pub fn dir() -> PathBuf {
@@ -25,7 +24,7 @@ pub struct Xkcd {
 impl Xkcd {
     pub fn random() -> anyhow::Result<Xkcd> {
         let num = Xkcd::latest_n()?;
-        let n = rand::thread_rng().gen_range(1..=num);
+        let n = rand::random_range(1..=num);
         Xkcd::number(n)
     }
 
@@ -56,9 +55,8 @@ impl Xkcd {
 
     fn latest() -> anyhow::Result<Xkcd> {
         log::debug!("getting latest xkcd");
-        Ok(ureq::get("https://xkcd.com/info.0.json")
-            .call()?
-            .into_json()?)
+        let mut response = ureq::get("https://xkcd.com/info.0.json").call()?;
+        Ok(response.body_mut().read_json()?)
     }
 
     fn number(n: u32) -> anyhow::Result<Xkcd> {
@@ -67,9 +65,8 @@ impl Xkcd {
             return Ok(comic);
         }
         log::info!("getting comic #{n} infos");
-        Ok(ureq::get(&format!("https://xkcd.com/{n}/info.0.json"))
-            .call()?
-            .into_json()?)
+        let mut response = ureq::get(&format!("https://xkcd.com/{n}/info.0.json")).call()?;
+        Ok(response.body_mut().read_json()?)
     }
 
     fn search_for(n: u32) -> Option<Xkcd> {
@@ -105,7 +102,8 @@ impl Xkcd {
             Ok(xkcd)
         } else {
             log::info!("downloading comic #{} to cache", self.num);
-            let mut reader = ureq::get(&self.img).call()?.into_reader();
+            let response = ureq::get(&self.img).call()?;
+            let mut reader = response.into_parts().1.into_reader();
             std::io::copy(&mut reader, &mut File::create(&xkcd)?)?;
             Ok(xkcd)
         }

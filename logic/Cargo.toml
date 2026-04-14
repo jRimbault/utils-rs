@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
-anyhow = "1.0.71"
+anyhow = "1.0.102"

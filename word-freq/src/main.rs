@@ -13,17 +13,17 @@ use std::{
 };
 
 #[derive(Debug, Parser)]
-#[clap(author, version)]
+#[command(author, version)]
 struct Args {
-    #[clap(required = true, parse(from_os_str))]
+    #[arg(required = true)]
     paths: Vec<PathBuf>,
-    #[clap(short, long, default_value_t = Regex::new(r#"\w+"#).unwrap())]
+    #[arg(short, long, default_value_t = Regex::new(r#"\w+"#).unwrap())]
     pattern: Regex,
-    #[clap(short = 'I', long)]
+    #[arg(short = 'I', long)]
     case_insensitive: bool,
-    #[clap(long, default_value_t = usize::MAX)]
+    #[arg(long, default_value_t = usize::MAX)]
     top: usize,
-    #[clap(short = 'P', long, default_value_t = rayon::current_num_threads())]
+    #[arg(short = 'P', long, default_value_t = rayon::current_num_threads())]
     parallelism: usize,
 }
 

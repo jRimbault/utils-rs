@@ -10,14 +10,17 @@ harness = false
 
 [features]
 default = []
+even-more-warnings = []
+more-warnings = []
 serde = ["indexmap/serde", "dep:serde"]
 
 [dependencies]
-indexmap = "2.2.6"
-serde = { version = "1.0.204", optional = true }
+indexmap = "2.14.0"
+serde = { version = "1.0.228", optional = true }
 
 [dev-dependencies]
-criterion = "0.5.1"
-rand = "0.8.5"
-yadf = { version = "1.0.0", default-features = false }
+criterion = "0.8.2"
+rand = "0.10.1"
+serde_json = "1.0.149"
+yadf = { version = "1.3.0", default-features = false }
 seahash = "4.1.0"

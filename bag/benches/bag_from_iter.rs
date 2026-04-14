@@ -1,7 +1,8 @@
 use criterion::{
-    black_box, criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
+    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
 };
 use rand::prelude::SliceRandom;
+use std::hint::black_box;
 
 fn yadf() -> Vec<(u64, String)> {
     let paths = vec![std::path::PathBuf::from("..").canonicalize().unwrap()];
@@ -19,7 +20,7 @@ fn yadf() -> Vec<(u64, String)> {
                 .collect::<Vec<_>>()
         })
         .collect();
-    items.shuffle(&mut rand::thread_rng());
+    items.shuffle(&mut rand::rng());
     items
 }
 
