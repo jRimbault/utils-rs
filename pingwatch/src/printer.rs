@@ -36,10 +36,16 @@ pub async fn run_printer(
                 None,
             ));
             pb.set_message("resolving...");
-            pb.enable_steady_tick(Duration::from_millis(spinner_style.interval_ms()));
             pb
         })
         .collect();
+
+    // Drive spinner frames from the tokio event loop rather than calling
+    // enable_steady_tick(), which spawns one OS thread per ProgressBar.
+    // A single interval here replaces N background threads with zero threads.
+    let tick_interval = Duration::from_millis(spinner_style.interval_ms());
+    let mut ticker = tokio::time::interval(tick_interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     // Track whether each bar is currently showing the "ok" style to avoid
     // cloning and re-applying the same style on every ping event.
@@ -47,68 +53,83 @@ pub async fn run_printer(
     let mut resolved_addrs = vec![None; bars.len()];
     let mut resolved_width = resolved_text_width(&resolved_addrs);
 
-    while let Some(ev) = rx.recv().await {
-        let idx = ev.idx();
-        let i = idx.as_usize();
-        // Defensive: skip events with an out-of-range index rather than panic.
-        let Some(bar) = bars.get(i) else {
-            continue;
-        };
-        match ev {
-            event::PingEvent::Resolved { addr, .. } => {
-                let display_addr = resolved_addr_for_display(&hosts[i], addr);
-                resolved_addrs[i] = display_addr;
-                let next_resolved_width = resolved_text_width(&resolved_addrs);
-                if next_resolved_width != resolved_width {
-                    resolved_width = next_resolved_width;
-                    refresh_prefixes(&bars, &hosts, host_width, resolved_width, &resolved_addrs);
-                } else {
-                    bar.set_prefix(render_prefix(
-                        &hosts[i],
-                        host_width,
-                        resolved_width,
-                        display_addr,
-                    ));
+    loop {
+        // Prioritise events over ticks so that state updates are never delayed
+        // by a tick branch that happens to be ready at the same instant.
+        tokio::select! {
+            biased;
+            maybe_ev = rx.recv() => {
+                let Some(ev) = maybe_ev else { break };
+                let idx = ev.idx();
+                let i = idx.as_usize();
+                // Defensive: skip events with an out-of-range index rather than panic.
+                let Some(bar) = bars.get(i) else { continue };
+                match ev {
+                    event::PingEvent::Resolved { addr, .. } => {
+                        let display_addr = resolved_addr_for_display(&hosts[i], addr);
+                        resolved_addrs[i] = display_addr;
+                        let next_resolved_width = resolved_text_width(&resolved_addrs);
+                        if next_resolved_width != resolved_width {
+                            resolved_width = next_resolved_width;
+                            refresh_prefixes(&bars, &hosts, host_width, resolved_width, &resolved_addrs);
+                        } else {
+                            bar.set_prefix(render_prefix(
+                                &hosts[i],
+                                host_width,
+                                resolved_width,
+                                display_addr,
+                            ));
+                        }
+                        bar.set_message("resolved");
+                    }
+                    event::PingEvent::ResolutionFailed { error, .. } => {
+                        bar.finish_with_message(format!("resolution failed: {error}"));
+                    }
+                    event::PingEvent::Success { rtt, .. } => {
+                        let ms = rtt.as_secs_f64() * 1000.0;
+                        if !bar_is_ok[i] {
+                            bar.set_style(style_ok.clone());
+                            bar_is_ok[i] = true;
+                        }
+                        bar.set_message(format!(
+                            "{}{ms:.1}ms",
+                            console::style("rtt=").dim().italic(),
+                        ));
+                    }
+                    event::PingEvent::Failure { error, .. } => {
+                        // Persistent line: accumulates above the spinner rows in the
+                        // scroll buffer and is never overwritten.
+                        //
+                        // Layout: dim timestamp  bold host/address prefix  red-FAILED  error.
+                        // The prefix uses the same padded host column as the spinners,
+                        // and includes the resolved address when it adds information.
+                        // The timestamp is dimmed so it recedes; prefix and FAILED pop.
+                        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+                        // Safe: hosts.len() == bars.len(); bounds already checked above.
+                        let prefix = render_failure_prefix(
+                            &hosts[i],
+                            host_width,
+                            resolved_width,
+                            resolved_addrs[i],
+                        );
+                        let _ = multi.println(format!(
+                            "{}  {}  {}  {error}",
+                            console::style(timestamp).dim(),
+                            prefix,
+                            console::style("FAILED").red().bold(),
+                        ));
+                        if bar_is_ok[i] {
+                            bar.set_style(style_wait.clone());
+                            bar_is_ok[i] = false;
+                        }
+                        bar.set_message(console::style("waiting").yellow().to_string());
+                    }
                 }
-                bar.set_message("resolved");
             }
-            event::PingEvent::ResolutionFailed { error, .. } => {
-                bar.finish_with_message(format!("resolution failed: {error}"));
-            }
-            event::PingEvent::Success { rtt, .. } => {
-                let ms = rtt.as_secs_f64() * 1000.0;
-                if !bar_is_ok[i] {
-                    bar.set_style(style_ok.clone());
-                    bar_is_ok[i] = true;
+            _ = ticker.tick() => {
+                for bar in &bars {
+                    bar.tick();
                 }
-                bar.set_message(format!(
-                    "{}{ms:.1}ms",
-                    console::style("rtt=").dim().italic(),
-                ));
-            }
-            event::PingEvent::Failure { error, .. } => {
-                // Persistent line: accumulates above the spinner rows in the
-                // scroll buffer and is never overwritten.
-                //
-                // Layout: dim timestamp  bold host/address prefix  red-FAILED  error.
-                // The prefix uses the same padded host column as the spinners,
-                // and includes the resolved address when it adds information.
-                // The timestamp is dimmed so it recedes; prefix and FAILED pop.
-                let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-                // Safe: hosts.len() == bars.len(); bounds already checked above.
-                let prefix =
-                    render_failure_prefix(&hosts[i], host_width, resolved_width, resolved_addrs[i]);
-                let _ = multi.println(format!(
-                    "{}  {}  {}  {error}",
-                    console::style(timestamp).dim(),
-                    prefix,
-                    console::style("FAILED").red().bold(),
-                ));
-                if bar_is_ok[i] {
-                    bar.set_style(style_wait.clone());
-                    bar_is_ok[i] = false;
-                }
-                bar.set_message(console::style("waiting").yellow().to_string());
             }
         }
     }

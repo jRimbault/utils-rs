@@ -20,12 +20,11 @@ toml = "1.1.2"
 
 [dependencies]
 anyhow = "1"
-ctrlc = "3"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 console = "0.16"
 indicatif = "0.18"
 surge-ping = "0.8"
-tokio = { version = "1", features = ["macros", "rt", "sync", "time", "net"] }
+tokio = { version = "1", features = ["macros", "rt", "signal", "sync", "time", "net"] }
 toml_edit = { version = "0.25.11", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }

@@ -34,18 +34,6 @@ mod worker;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// Install a Ctrl+C handler that restores the terminal cursor.
-///
-/// Prevents an invisible cursor when the process is interrupted while
-/// indicatif's spinner has hidden it.
-pub fn setup_ctrlc_handler() -> anyhow::Result<()> {
-    ctrlc::set_handler(|| {
-        let _ = console::Term::stdout().show_cursor();
-        std::process::exit(0);
-    })?;
-    Ok(())
-}
-
 pub async fn run(args: cli::Args) -> anyhow::Result<()> {
     let hosts: Arc<[types::Hostname]> = Arc::from(args.hosts);
     let interval = args.interval;
