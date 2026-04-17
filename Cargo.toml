@@ -23,3 +23,13 @@ members = [
 opt-level = "z"
 codegen-units = 1
 strip = "symbols"
+
+# Opt-in profile for the smallest `pingwatch` binary.
+# Usage: cargo build --profile pingwatch-aggressive -p pingwatch
+[profile.pingwatch-aggressive]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+strip = "symbols"
+lto = "fat"
+panic = "abort"
