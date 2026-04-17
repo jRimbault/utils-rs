@@ -19,3 +19,7 @@ members = [
     "pingwatch",
 ]
 
+[profile.release.package.pingwatch]
+opt-level = "z"
+codegen-units = 1
+strip = "symbols"
