@@ -1,4 +1,7 @@
-use crate::{spinner_style::SpinnerStyle, types::Hostname};
+use crate::{
+    spinner_style::{DEFAULT_SPINNER_STYLE_NAME, SpinnerStyle},
+    types::Hostname,
+};
 use anyhow::Context as _;
 use std::time::Duration;
 
@@ -15,7 +18,7 @@ struct Config {
     interval: Option<u64>,
     /// Per-ping timeout in milliseconds.
     timeout: Option<u64>,
-    /// Spinner style preset name from cli-spinners.
+    /// Spinner style preset name. Lean builds accept only `staticDot`.
     spinner_style: Option<SpinnerStyle>,
 }
 
@@ -35,7 +38,7 @@ struct Config {
 ///   hosts        = ["example.com", "8.8.8.8"]   # list of hostnames or IPs
 ///   interval     = 1000                         # milliseconds between pings
 ///   timeout      = 2000                         # per-ping timeout in milliseconds
-///   spinner_style = "dots14"                    # spinner animation preset
+///   spinner_style = "dots14"                    # or "staticDot" in lean builds
 // The derive keeps the clap API intact (including `try_parse_from` used in
 // tests); the inherent `parse(bin_name)` method shadows it for production
 // use and adds config-file resolution.
@@ -54,7 +57,7 @@ pub struct Args {
     #[arg(short, long, default_value = "2000", value_parser = parse_millis)]
     pub timeout: Duration,
     /// Spinner style preset from cli-spinners
-    #[arg(long, value_enum, default_value = "dots14")]
+    #[arg(long, value_enum, default_value = DEFAULT_SPINNER_STYLE_NAME)]
     pub spinner_style: SpinnerStyle,
 }
 
@@ -118,7 +121,7 @@ impl Args {
             &matches,
             "spinner_style",
             config.spinner_style,
-            SpinnerStyle::Dots14,
+            SpinnerStyle::default(),
         );
 
         Ok(Args {

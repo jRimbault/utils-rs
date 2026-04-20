@@ -3,6 +3,10 @@ name = "pingwatch"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["animated-spinners"]
+animated-spinners = []
+
 [[bin]]
 name = "pingwatch"
 path = "src/main.rs"

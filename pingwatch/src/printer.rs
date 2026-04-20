@@ -5,7 +5,9 @@
 //! and delegates all mutation of on-screen state to `PrinterState`. It does
 //! not know how state is represented or how strings are rendered.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+#[cfg(any(feature = "animated-spinners", test))]
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 
@@ -27,19 +29,27 @@ pub async fn run_printer(
 ) {
     let mut state = PrinterState::new(hosts, spinner_style);
 
-    let tick_interval = Duration::from_millis(spinner_style.interval_ms());
-    let mut ticker = tokio::time::interval(tick_interval);
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    #[cfg(feature = "animated-spinners")]
+    {
+        let tick_interval = Duration::from_millis(spinner_style.interval_ms());
+        let mut ticker = tokio::time::interval(tick_interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    loop {
-        tokio::select! {
-            biased;
-            maybe_ev = rx.recv() => {
-                let Some(ev) = maybe_ev else { break };
-                state.handle(ev);
+        loop {
+            tokio::select! {
+                biased;
+                maybe_ev = rx.recv() => {
+                    let Some(ev) = maybe_ev else { break };
+                    state.handle(ev);
+                }
+                _ = ticker.tick() => state.tick(),
             }
-            _ = ticker.tick() => state.tick(),
         }
+    }
+
+    #[cfg(not(feature = "animated-spinners"))]
+    while let Some(ev) = rx.recv().await {
+        state.handle(ev);
     }
 }
 
@@ -68,7 +78,7 @@ mod tests {
         drop(tx);
         tokio::time::timeout(
             Duration::from_secs(1),
-            run_printer(make_hosts(&["h1"]), SpinnerStyle::Dots, rx),
+            run_printer(make_hosts(&["h1"]), SpinnerStyle::default(), rx),
         )
         .await
         .expect("printer should exit immediately when the channel is already closed");
@@ -98,7 +108,7 @@ mod tests {
         drop(tx);
         tokio::time::timeout(
             Duration::from_secs(1),
-            run_printer(make_hosts(&["h1"]), SpinnerStyle::Dots, rx),
+            run_printer(make_hosts(&["h1"]), SpinnerStyle::default(), rx),
         )
         .await
         .expect("printer should handle this event and exit");
@@ -116,7 +126,7 @@ mod tests {
         drop(tx);
         tokio::time::timeout(
             Duration::from_secs(1),
-            run_printer(make_hosts(&["h1"]), SpinnerStyle::Dots, rx),
+            run_printer(make_hosts(&["h1"]), SpinnerStyle::default(), rx),
         )
         .await
         .expect("printer should skip out-of-range events without panicking");
@@ -142,7 +152,7 @@ mod tests {
             Duration::from_secs(2),
             run_printer(
                 make_hosts(&["host-a", "host-b", "host-c"]),
-                SpinnerStyle::Dots,
+                SpinnerStyle::default(),
                 rx,
             ),
         )

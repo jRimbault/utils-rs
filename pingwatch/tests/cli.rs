@@ -68,6 +68,7 @@ fn invalid_args_rejected(#[case] argv: &[&str]) {
 // Spinner style — clap-level parsing and config precedence
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "animated-spinners")]
 #[rstest]
 #[case(&["pingwatch", "host"], SpinnerStyle::Dots14)]
 #[case(&["pingwatch", "--spinner-style", "star", "host"], SpinnerStyle::Star)]
@@ -75,6 +76,13 @@ fn invalid_args_rejected(#[case] argv: &[&str]) {
 fn spinner_style_params(#[case] argv: &[&str], #[case] expected: SpinnerStyle) {
     let args = parse_no_config(argv).unwrap();
     assert_eq!(args.spinner_style, expected);
+}
+
+#[cfg(not(feature = "animated-spinners"))]
+#[test]
+fn static_dot_is_the_default_spinner_style() {
+    let args = parse_no_config(&["pingwatch", "host"]).unwrap();
+    assert_eq!(args.spinner_style, SpinnerStyle::StaticDot);
 }
 
 #[rstest]
@@ -152,6 +160,7 @@ fn invalid_config_timing_rejected(#[case] config: &str) {
     assert!(fixture.parse(["pingwatch", "host"]).is_err());
 }
 
+#[cfg(feature = "animated-spinners")]
 #[test]
 fn config_spinner_style_used_when_flag_absent() {
     let fixture = IntegrationFixture::with_config("spinner_style = \"arc\"\n");
@@ -159,6 +168,7 @@ fn config_spinner_style_used_when_flag_absent() {
     assert_eq!(args.spinner_style, SpinnerStyle::Arc);
 }
 
+#[cfg(feature = "animated-spinners")]
 #[test]
 fn cli_spinner_style_overrides_config_even_when_it_matches_the_default() {
     let fixture = IntegrationFixture::with_config("spinner_style = \"arc\"\n");
@@ -166,6 +176,14 @@ fn cli_spinner_style_overrides_config_even_when_it_matches_the_default() {
         .parse(["pingwatch", "--spinner-style", "dots14", "host"])
         .unwrap();
     assert_eq!(args.spinner_style, SpinnerStyle::Dots14);
+}
+
+#[cfg(not(feature = "animated-spinners"))]
+#[test]
+fn config_static_dot_spinner_style_used_when_flag_absent() {
+    let fixture = IntegrationFixture::with_config("spinner_style = \"staticDot\"\n");
+    let args = fixture.parse(["pingwatch", "host"]).unwrap();
+    assert_eq!(args.spinner_style, SpinnerStyle::StaticDot);
 }
 
 #[test]

@@ -11,6 +11,7 @@ const SOURCE_CONFIG_PATH: &str = "spinner-source.toml";
 const LOCAL_SOURCE_PATH: &str = "src/spinners.json";
 const GENERATED_MODULE_PATH: &str = "spinner_style.rs";
 const REFRESH_ENV: &str = "PINGWATCH_REFRESH_SPINNERS";
+const ANIMATED_FEATURE_ENV: &str = "CARGO_FEATURE_ANIMATED_SPINNERS";
 
 #[derive(Deserialize)]
 struct SpinnerSourceConfig {
@@ -44,6 +45,16 @@ fn main() {
     println!("cargo:rerun-if-changed={SOURCE_CONFIG_PATH}");
     println!("cargo:rerun-if-changed={LOCAL_SOURCE_PATH}");
     println!("cargo:rerun-if-env-changed={REFRESH_ENV}");
+    println!("cargo:rerun-if-env-changed={ANIMATED_FEATURE_ENV}");
+
+    let out_path = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is always set"))
+        .join(GENERATED_MODULE_PATH);
+    if env::var_os(ANIMATED_FEATURE_ENV).is_none() {
+        let generated = generate_static_module();
+        write_if_changed(&out_path, generated.as_bytes())
+            .unwrap_or_else(|err| panic!("writing {}: {err}", out_path.display()));
+        return;
+    }
 
     let config = read_source_config();
     let local_source_path = Path::new(LOCAL_SOURCE_PATH);
@@ -72,10 +83,71 @@ fn main() {
         .unwrap_or_else(|err| panic!("parsing {LOCAL_SOURCE_PATH}: {err}"));
 
     let generated = generate_module(&config.upstream, &spinners);
-    let out_path = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is always set"))
-        .join(GENERATED_MODULE_PATH);
     write_if_changed(&out_path, generated.as_bytes())
         .unwrap_or_else(|err| panic!("writing {}: {err}", out_path.display()));
+}
+
+fn generate_static_module() -> String {
+    let mut output = String::new();
+
+    writeln!(&mut output, "use clap::ValueEnum;").unwrap();
+    writeln!(&mut output).unwrap();
+    writeln!(
+        &mut output,
+        "/// Static dot renderer used when the `animated-spinners` feature is disabled."
+    )
+    .unwrap();
+    writeln!(
+        &mut output,
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Deserialize)]"
+    )
+    .unwrap();
+    writeln!(&mut output, "#[value(rename_all = \"camelCase\")]").unwrap();
+    writeln!(&mut output, "#[serde(rename_all = \"camelCase\")]").unwrap();
+    writeln!(&mut output, "pub enum SpinnerStyle {{").unwrap();
+    writeln!(&mut output, "    #[default]").unwrap();
+    writeln!(&mut output, "    StaticDot,").unwrap();
+    writeln!(&mut output, "}}").unwrap();
+    writeln!(&mut output).unwrap();
+    writeln!(
+        &mut output,
+        "pub const DEFAULT_SPINNER_STYLE_NAME: &str = \"staticDot\";"
+    )
+    .unwrap();
+    writeln!(
+        &mut output,
+        "pub const SPINNER_SOURCE_REVISION: &str = \"static-dot\";"
+    )
+    .unwrap();
+    writeln!(
+        &mut output,
+        "pub const SPINNER_SOURCE_URL: &str = \"static-dot\";"
+    )
+    .unwrap();
+    writeln!(&mut output).unwrap();
+    writeln!(&mut output, "impl SpinnerStyle {{").unwrap();
+    writeln!(&mut output, "    pub const fn interval_ms(self) -> u64 {{").unwrap();
+    writeln!(&mut output, "        match self {{").unwrap();
+    writeln!(&mut output, "            Self::StaticDot => 1000,").unwrap();
+    writeln!(&mut output, "        }}").unwrap();
+    writeln!(&mut output, "    }}").unwrap();
+    writeln!(&mut output).unwrap();
+    writeln!(
+        &mut output,
+        "    pub const fn frames(self) -> &'static [&'static str] {{"
+    )
+    .unwrap();
+    writeln!(&mut output, "        match self {{").unwrap();
+    writeln!(
+        &mut output,
+        "            Self::StaticDot => &[\"●\", \"●\"],"
+    )
+    .unwrap();
+    writeln!(&mut output, "        }}").unwrap();
+    writeln!(&mut output, "    }}").unwrap();
+    writeln!(&mut output, "}}").unwrap();
+
+    output
 }
 
 fn read_source_config() -> SpinnerSourceConfig {
@@ -132,6 +204,11 @@ fn generate_module(source: &UpstreamSource, spinners: &IndexMap<String, SpinnerS
         &mut output,
         "pub const SPINNER_SOURCE_REVISION: &str = {:?};",
         source.revision
+    )
+    .unwrap();
+    writeln!(
+        &mut output,
+        "pub const DEFAULT_SPINNER_STYLE_NAME: &str = \"dots14\";"
     )
     .unwrap();
     writeln!(

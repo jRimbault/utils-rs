@@ -75,6 +75,7 @@ impl PrinterState {
     }
 
     /// Advance every spinner by one frame.
+    #[cfg(feature = "animated-spinners")]
     pub(super) fn tick(&self) {
         for bar in &self.bars {
             bar.tick();
