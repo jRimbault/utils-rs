@@ -18,7 +18,8 @@ struct Config {
     interval: Option<u64>,
     /// Per-ping timeout in milliseconds.
     timeout: Option<u64>,
-    /// Spinner style preset name. Lean builds accept only `staticDot`.
+    /// Spinner style preset name. Animated builds expose the full catalog;
+    /// static builds accept only `staticDot`.
     spinner_style: Option<SpinnerStyle>,
 }
 
@@ -38,7 +39,7 @@ struct Config {
 ///   hosts        = ["example.com", "8.8.8.8"]   # list of hostnames or IPs
 ///   interval     = 1000                         # milliseconds between pings
 ///   timeout      = 2000                         # per-ping timeout in milliseconds
-///   spinner_style = "dots14"                    # or "staticDot" in lean builds
+///   spinner_style = "staticDot"                 # or any animated preset when the feature is enabled
 // The derive keeps the clap API intact (including `try_parse_from` used in
 // tests); the inherent `parse(bin_name)` method shadows it for production
 // use and adds config-file resolution.

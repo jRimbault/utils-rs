@@ -10,12 +10,12 @@ use std::net::IpAddr;
 
 use crate::{spinner_style::SpinnerStyle, types};
 
-/// Build a spinner style with the given tick color, sharing frames and tick
+/// Build a spinner style from the given template, sharing frames and tick
 /// interval with the globally-selected `SpinnerStyle`.
-pub fn make_style(color: &str, spinner_style: SpinnerStyle) -> indicatif::ProgressStyle {
+pub fn make_style(template: &str, spinner_style: SpinnerStyle) -> indicatif::ProgressStyle {
     indicatif::ProgressStyle::default_spinner()
         .tick_strings(spinner_style.frames())
-        .template(&format!("{{spinner:.{color}}} {{prefix}} {{msg}}"))
+        .template(template)
         .expect("valid template")
 }
 

@@ -11,6 +11,9 @@ use std::{net::IpAddr, sync::Arc, time::Duration};
 use super::render;
 use crate::{event, spinner_style::SpinnerStyle, types};
 
+const WAIT_TEMPLATE: &str = "{spinner:.yellow} {prefix} {msg}";
+const OK_TEMPLATE: &str = "{spinner:.green} {prefix} rtt={msg}";
+
 /// Aggregates the indicatif bars and the derived state needed to keep their
 /// prefixes aligned as new addresses are resolved.
 pub(super) struct PrinterState {
@@ -30,8 +33,8 @@ impl PrinterState {
     pub(super) fn new(hosts: Arc<[types::Hostname]>, spinner_style: SpinnerStyle) -> Self {
         let multi = indicatif::MultiProgress::new();
         let host_width = hosts.iter().map(|h| h.as_str().len()).max().unwrap_or(0);
-        let style_ok = render::make_style("green", spinner_style);
-        let style_wait = render::make_style("yellow", spinner_style);
+        let style_ok = render::make_style(OK_TEMPLATE, spinner_style);
+        let style_wait = render::make_style(WAIT_TEMPLATE, spinner_style);
 
         let bars: Vec<indicatif::ProgressBar> = hosts
             .iter()
@@ -118,10 +121,7 @@ impl PrinterState {
             self.bars[i].set_style(self.style_ok.clone());
             self.bar_is_ok[i] = true;
         }
-        self.bars[i].set_message(format!(
-            "{}{ms:.1}ms",
-            console::style("rtt=").dim().italic(),
-        ));
+        self.bars[i].set_message(format!("{ms:.1}ms"));
     }
 
     fn on_failure(&mut self, i: usize, error: event::PingFailure) {
@@ -142,6 +142,6 @@ impl PrinterState {
             self.bars[i].set_style(self.style_wait.clone());
             self.bar_is_ok[i] = false;
         }
-        self.bars[i].set_message(console::style("waiting").yellow().to_string());
+        self.bars[i].set_message("waiting");
     }
 }
