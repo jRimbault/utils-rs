@@ -108,7 +108,7 @@ impl PrinterState {
         self.bars[i].set_message("resolved");
     }
 
-    fn on_resolution_failed(&mut self, i: usize, error: String) {
+    fn on_resolution_failed(&mut self, i: usize, error: types::ResolveError) {
         self.bars[i].finish_with_message(format!("resolution failed: {error}"));
     }
 
@@ -124,7 +124,7 @@ impl PrinterState {
         ));
     }
 
-    fn on_failure(&mut self, i: usize, error: String) {
+    fn on_failure(&mut self, i: usize, error: event::PingFailure) {
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let prefix = render::render_failure_prefix(
             &self.hosts[i],

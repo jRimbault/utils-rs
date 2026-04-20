@@ -1,7 +1,6 @@
 //! Domain-level newtypes shared across the crate.
 
-use anyhow::Context as _;
-use std::net::IpAddr;
+use std::{io, net::IpAddr};
 
 /// A hostname or IP-address string, validated at the CLI boundary.
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -16,20 +15,38 @@ impl Hostname {
     ///
     /// Tries a direct parse first (handles bare IP literals without a DNS
     /// round-trip), then falls back to `tokio::net::lookup_host`.
-    pub async fn resolve(&self) -> anyhow::Result<IpAddr> {
+    pub async fn resolve(&self) -> Result<IpAddr, ResolveError> {
         let host = self.0.as_str();
         if let Ok(ip) = host.parse::<IpAddr>() {
             return Ok(ip);
         }
         let mut addrs = tokio::net::lookup_host(format!("{host}:0"))
             .await
-            .with_context(|| format!("DNS lookup for '{host}'"))?;
+            .map_err(|e| ResolveError::DnsLookup(e.kind()))?;
         addrs
             .next()
             .map(|sa| sa.ip())
-            .ok_or_else(|| anyhow::anyhow!("no addresses found for '{host}'"))
+            .ok_or(ResolveError::NoAddresses)
     }
 }
+
+/// Compact hostname-resolution failure carried across task boundaries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolveError {
+    DnsLookup(io::ErrorKind),
+    NoAddresses,
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DnsLookup(kind) => write!(f, "dns lookup failed: {}", io::Error::from(*kind)),
+            Self::NoAddresses => f.write_str("no addresses found"),
+        }
+    }
+}
+
+impl std::error::Error for ResolveError {}
 
 impl std::fmt::Display for Hostname {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -30,7 +30,7 @@ pub async fn run_worker(cfg: WorkerConfig, tx: mpsc::Sender<event::PingEvent>) {
             let _ = tx
                 .send(event::PingEvent::ResolutionFailed {
                     idx: cfg.idx,
-                    error: e.to_string(),
+                    error: e,
                 })
                 .await;
             return;
@@ -65,7 +65,7 @@ pub async fn run_worker(cfg: WorkerConfig, tx: mpsc::Sender<event::PingEvent>) {
                 if tx
                     .send(event::PingEvent::Failure {
                         idx: cfg.idx,
-                        error: e.to_string(),
+                        error: e.into(),
                     })
                     .await
                     .is_err()

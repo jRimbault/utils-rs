@@ -95,11 +95,11 @@ mod tests {
     })]
     #[case::failure(event::PingEvent::Failure {
         idx: idx(0),
-        error: "timeout".into(),
+        error: event::PingFailure::Timeout { seq: 0 },
     })]
     #[case::resolution_failed(event::PingEvent::ResolutionFailed {
         idx: idx(0),
-        error: "nxdomain".into(),
+        error: types::ResolveError::NoAddresses,
     })]
     #[tokio::test]
     async fn handles_event_variant_without_panic(#[case] ev: event::PingEvent) {
