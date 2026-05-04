@@ -48,18 +48,10 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     ])
     .areas(inner);
 
-    // Row 0: PID + name left, key-bind hints right.
-    let hints = " [q]quit [↑↓/jk]nav [t]threads ";
+    // Row 0: PID + process name.
     let pid_name = format!(" {:>7}  {}", root.pid, root.name);
-    let pad = inner
-        .width
-        .saturating_sub(pid_name.len() as u16 + hints.len() as u16);
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(pid_name, Style::new().bold().fg(Color::White)),
-            Span::raw(" ".repeat(pad as usize)),
-            Span::styled(hints, Style::new().fg(Color::DarkGray)),
-        ])),
+        Paragraph::new(Span::styled(pid_name, Style::new().bold().fg(Color::White))),
         top_row,
     );
 

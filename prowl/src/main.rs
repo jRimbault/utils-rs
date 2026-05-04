@@ -110,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
                             KeyCode::Up | KeyCode::Char('k') => app.move_up(),
                             KeyCode::Down | KeyCode::Char('j') => app.move_down(),
                             KeyCode::Char('t') => app.toggle_threads(),
+                            KeyCode::Enter | KeyCode::Char(' ') => app.toggle_collapse(),
                             _ => {}
                         }
                     }

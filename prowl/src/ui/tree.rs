@@ -8,7 +8,7 @@ use crate::{app::App, format};
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Row, Table},
     Frame,
 };
@@ -27,6 +27,7 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
         Cell::new("MEM%"),
         Cell::new("MEM"),
         Cell::new("RES"),
+        Cell::new("ELAPSED"),
         Cell::new("Command"),
     ])
     .style(Style::new().fg(Color::White));
@@ -41,7 +42,14 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
             let mem_color = format::intensity_color(fr.mem_pct);
             let cpu_bar = format::bar(fr.cpu_pct / 100.0, 8);
             let mem_bar = format::bar(fr.mem_pct / 100.0, 8);
-            let cmd = format!("{}{}", fr.connector, fr.cmdline);
+
+            // Show collapse indicator for nodes with children.
+            let collapse_marker = if fr.has_children {
+                if fr.is_collapsed { "▸ " } else { "▾ " }
+            } else {
+                ""
+            };
+            let cmd = format!("{}{}{}", fr.connector, collapse_marker, fr.cmdline);
 
             // Selection overrides thread dimming so the selected row is always visible.
             let base_style = if is_selected {
@@ -63,6 +71,7 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
                 Cell::new(format!("{:>4.1}", fr.mem_pct)).style(Style::new().fg(mem_color)),
                 Cell::new(mem_bar).style(Style::new().fg(mem_color)),
                 Cell::new(format!("{:>7}", format::format_bytes(fr.mem_rss_bytes))),
+                Cell::new(format!("{:>8}", format::format_duration(fr.elapsed))),
                 Cell::new(cmd),
             ])
             .style(base_style)
@@ -78,8 +87,20 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Length(5),   // MEM%
         Constraint::Length(10),  // MEM bar
         Constraint::Length(8),   // RES
+        Constraint::Length(9),   // ELAPSED
         Constraint::Fill(1),     // Command
     ];
+
+    let footer_hints = Line::from(vec![
+        Span::styled(" q", Style::new().fg(Color::White).bold()),
+        Span::styled(" quit ", Style::new().fg(Color::DarkGray)),
+        Span::styled("↑↓/jk", Style::new().fg(Color::White).bold()),
+        Span::styled(" nav ", Style::new().fg(Color::DarkGray)),
+        Span::styled("⏎/␣", Style::new().fg(Color::White).bold()),
+        Span::styled(" collapse ", Style::new().fg(Color::DarkGray)),
+        Span::styled("t", Style::new().fg(Color::White).bold()),
+        Span::styled(" threads ", Style::new().fg(Color::DarkGray)),
+    ]);
 
     let table = Table::new(rows, widths)
         .header(header)
@@ -87,7 +108,8 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::new().fg(Color::DarkGray)),
+                .border_style(Style::new().fg(Color::DarkGray))
+                .title_bottom(footer_hints),
         )
         .row_highlight_style(Style::new().bg(Color::DarkGray).bold())
         .column_spacing(1);

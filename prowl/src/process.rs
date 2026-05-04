@@ -51,7 +51,12 @@ pub struct FlatRow {
     pub cpu_pct: f64,
     pub mem_pct: f64,
     pub mem_rss_bytes: u64,
+    pub elapsed: Duration,
     pub is_thread: bool,
+    /// Whether this node has visible children (used for collapse indicator).
+    pub has_children: bool,
+    /// Whether this node's subtree is currently collapsed.
+    pub is_collapsed: bool,
 }
 
 /// Parse `/etc/passwd` into a `uid → username` map.
@@ -202,12 +207,15 @@ pub fn collect_tree(
                         0.0
                     };
                     prev_ticks.insert(task.tid, thread_ticks);
+                    // /proc/<pid>/task/<tid>/comm gives the full thread name
+                    // without the 15-char truncation of stat.comm.
+                    let thread_name = fs::read_to_string(format!("/proc/{root_pid}/task/{}/comm", task.tid))
+                        .map(|s| s.trim_end().to_owned())
+                        .unwrap_or_else(|_| tstat.comm.clone());
                     Some(ProcessNode {
                         pid: task.tid,
-                        name: tstat.comm.clone(),
-                        // Threads show only their kernel-visible name; the parent
-                        // binary is already visible via the tree structure.
-                        cmdline: tstat.comm.clone(),
+                        name: thread_name.clone(),
+                        cmdline: thread_name,
                         user: user.clone(),
                         state: tstat.state,
                         cpu_pct: thread_cpu,
@@ -265,9 +273,13 @@ fn compute_elapsed(starttime: u64, ticks_per_second: u64) -> Duration {
 ///
 /// The connector strings use Unicode box-drawing characters (├─, └─, │)
 /// to reproduce an htop-style tree appearance in a columnar table.
-pub fn flatten(root: &ProcessNode, show_threads: bool) -> Vec<FlatRow> {
+pub fn flatten(
+    root: &ProcessNode,
+    show_threads: bool,
+    collapsed: &std::collections::HashSet<i32>,
+) -> Vec<FlatRow> {
     let mut out = Vec::new();
-    flatten_node(root, &root.name, "", true, true, show_threads, &mut out);
+    flatten_node(root, &root.name, "", true, true, show_threads, collapsed, &mut out);
     out
 }
 
@@ -279,6 +291,7 @@ fn flatten_node(
     is_root: bool,
     is_last: bool,
     show_threads: bool,
+    collapsed: &std::collections::HashSet<i32>,
     out: &mut Vec<FlatRow>,
 ) {
     // Root node gets no connector; subsequent nodes get tree-art glyphs.
@@ -315,6 +328,13 @@ fn flatten_node(
         }
     };
 
+    let visible_children: Vec<_> = node
+        .children
+        .iter()
+        .filter(|c| show_threads || !c.is_thread)
+        .collect();
+    let is_collapsed = collapsed.contains(&node.pid);
+
     out.push(FlatRow {
         connector,
         pid: node.pid,
@@ -324,8 +344,16 @@ fn flatten_node(
         cpu_pct: node.cpu_pct,
         mem_pct: node.mem_pct,
         mem_rss_bytes: node.mem_rss_bytes,
+        elapsed: node.elapsed,
         is_thread: node.is_thread,
+        has_children: !visible_children.is_empty(),
+        is_collapsed,
     });
+
+    // Skip children when this node is collapsed.
+    if is_collapsed {
+        return;
+    }
 
     // The child prefix extends the current prefix by one "column" worth of
     // indentation.  If the current node is not the last sibling we draw a
@@ -336,20 +364,16 @@ fn flatten_node(
         format!("{prefix}{}", if is_last { "   " } else { "│  " })
     };
 
-    let visible: Vec<_> = node
-        .children
-        .iter()
-        .filter(|c| show_threads || !c.is_thread)
-        .collect();
-    let n = visible.len();
-    for (i, child) in visible.iter().enumerate() {
-        flatten_node(child, root_name, &child_prefix, false, i == n - 1, show_threads, out);
+    let n = visible_children.len();
+    for (i, child) in visible_children.iter().enumerate() {
+        flatten_node(child, root_name, &child_prefix, false, i == n - 1, show_threads, collapsed, out);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn make_node(pid: i32, name: &str) -> ProcessNode {
         ProcessNode {
@@ -373,7 +397,8 @@ mod tests {
     #[test]
     fn flatten_single_node() {
         let root = make_node(1, "root");
-        let rows = flatten(&root, false);
+        let no_collapsed = HashSet::new();
+        let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].connector, "");
         assert_eq!(rows[0].pid, 1);
@@ -384,7 +409,8 @@ mod tests {
         let mut root = make_node(1, "root");
         root.children.push(make_node(2, "child1"));
         root.children.push(make_node(3, "child2"));
-        let rows = flatten(&root, false);
+        let no_collapsed = HashSet::new();
+        let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 3);
         // First child is not last → ├─
         assert_eq!(rows[1].connector, "├─ ");
@@ -398,7 +424,8 @@ mod tests {
         let mut thread = make_node(10, "thread");
         thread.is_thread = true;
         root.children.push(thread);
-        let rows = flatten(&root, false);
+        let no_collapsed = HashSet::new();
+        let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 1, "thread should be hidden");
     }
 
@@ -408,8 +435,34 @@ mod tests {
         let mut thread = make_node(10, "thread");
         thread.is_thread = true;
         root.children.push(thread);
-        let rows = flatten(&root, true);
+        let no_collapsed = HashSet::new();
+        let rows = flatten(&root, true, &no_collapsed);
         assert_eq!(rows.len(), 2, "thread should appear");
         assert!(rows[1].is_thread);
+    }
+
+    #[test]
+    fn flatten_collapsed_hides_children() {
+        let mut root = make_node(1, "root");
+        root.children.push(make_node(2, "child1"));
+        root.children.push(make_node(3, "child2"));
+        let collapsed = HashSet::from([1]);
+        let rows = flatten(&root, false, &collapsed);
+        assert_eq!(rows.len(), 1, "children should be hidden when root is collapsed");
+        assert!(rows[0].is_collapsed);
+    }
+
+    #[test]
+    fn flatten_collapsed_subtree() {
+        let mut root = make_node(1, "root");
+        let mut child = make_node(2, "child");
+        child.children.push(make_node(3, "grandchild"));
+        root.children.push(child);
+        // Collapse child (pid 2), not root.
+        let collapsed = HashSet::from([2]);
+        let rows = flatten(&root, false, &collapsed);
+        assert_eq!(rows.len(), 2, "grandchild should be hidden");
+        assert!(!rows[0].is_collapsed);
+        assert!(rows[1].is_collapsed);
     }
 }

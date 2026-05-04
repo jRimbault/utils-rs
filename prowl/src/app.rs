@@ -5,7 +5,7 @@
 //! preferences.  All data collection lives in `collector`; all rendering in `ui`.
 
 use crate::process::{FlatRow, ProcessNode, flatten};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 const HISTORY_CAPACITY: usize = 200;
 
@@ -21,6 +21,8 @@ pub struct App {
     pub exited: bool,
     /// Number of tree rows currently visible on screen; set by the renderer.
     pub visible_rows: usize,
+    /// PIDs whose subtrees are collapsed in the tree view.
+    pub collapsed: HashSet<i32>,
     /// CPU% × 10 per sample — feeds the header sparkline.
     pub cpu_history: VecDeque<u64>,
     /// MEM% × 10 per sample — feeds the header sparkline.
@@ -37,6 +39,7 @@ impl App {
             show_threads,
             exited: false,
             visible_rows: 20,
+            collapsed: HashSet::new(),
             cpu_history: VecDeque::new(),
             mem_history: VecDeque::new(),
         }
@@ -46,7 +49,7 @@ impl App {
     pub fn apply_snapshot(&mut self, root: ProcessNode) {
         push_history(&mut self.cpu_history, (root.cpu_pct * 10.0) as u64);
         push_history(&mut self.mem_history, (root.mem_pct * 10.0) as u64);
-        self.flat_rows = flatten(&root, self.show_threads);
+        self.flat_rows = flatten(&root, self.show_threads, &self.collapsed);
         if !self.flat_rows.is_empty() && self.selected >= self.flat_rows.len() {
             self.selected = self.flat_rows.len() - 1;
         }
@@ -74,12 +77,29 @@ impl App {
     pub fn toggle_threads(&mut self) {
         self.show_threads = !self.show_threads;
         if let Some(root) = &self.root {
-            self.flat_rows = flatten(root, self.show_threads);
+            self.flat_rows = flatten(root, self.show_threads, &self.collapsed);
         }
         if !self.flat_rows.is_empty() && self.selected >= self.flat_rows.len() {
             self.selected = self.flat_rows.len() - 1;
         }
         self.sync_scroll();
+    }
+
+    /// Toggle collapse state of the currently selected node's subtree.
+    pub fn toggle_collapse(&mut self) {
+        if let Some(row) = self.flat_rows.get(self.selected) {
+            let pid = row.pid;
+            if !self.collapsed.remove(&pid) {
+                self.collapsed.insert(pid);
+            }
+            if let Some(root) = &self.root {
+                self.flat_rows = flatten(root, self.show_threads, &self.collapsed);
+            }
+            if !self.flat_rows.is_empty() && self.selected >= self.flat_rows.len() {
+                self.selected = self.flat_rows.len() - 1;
+            }
+            self.sync_scroll();
+        }
     }
 
     fn sync_scroll(&mut self) {
