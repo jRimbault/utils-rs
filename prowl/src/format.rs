@@ -6,14 +6,37 @@
 use ratatui::style::Color;
 use std::time::Duration;
 
-/// Render a filled-vs-empty progress bar using block characters.
+/// Render a horizontal bar using braille dot characters.
+///
+/// Each braille cell represents two vertical positions. The bar fills from
+/// the left using the bottom dot row (⣀) and leaves empty cells as the
+/// braille blank (⠀), producing a thin baseline-style bar.
 ///
 /// `ratio` is clamped to [0.0, 1.0] before use.
 pub fn bar(ratio: f64, width: usize) -> String {
     let ratio = ratio.clamp(0.0, 1.0);
     let filled = (ratio * width as f64).round() as usize;
     let empty = width - filled;
-    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+    // ⣤ = bottom two dots filled (U+28E4), ⠀ = braille blank (U+2800)
+    format!("{}{}", "⣤".repeat(filled), "⠀".repeat(empty))
+}
+
+/// Map a single-character process state to its full descriptive word.
+pub fn state_word(state: char) -> &'static str {
+    match state {
+        'R' => "Running",
+        'S' => "Sleeping",
+        'D' => "Disk Sleep",
+        'Z' => "Zombie",
+        'T' => "Stopped",
+        't' => "Tracing",
+        'X' | 'x' => "Dead",
+        'K' => "Wakekill",
+        'W' => "Waking",
+        'P' => "Parked",
+        'I' => "Idle",
+        _ => "Unknown",
+    }
 }
 
 /// Human-readable byte count with IEC prefixes (KiB, MiB, GiB).
@@ -60,22 +83,32 @@ mod tests {
 
     #[test]
     fn bar_empty() {
-        assert_eq!(bar(0.0, 8), "░░░░░░░░");
+        assert_eq!(bar(0.0, 8), "⠀⠀⠀⠀⠀⠀⠀⠀");
     }
 
     #[test]
     fn bar_full() {
-        assert_eq!(bar(1.0, 8), "████████");
+        assert_eq!(bar(1.0, 8), "⣤⣤⣤⣤⣤⣤⣤⣤");
     }
 
     #[test]
     fn bar_clamped_above() {
-        assert_eq!(bar(2.0, 4), "████");
+        assert_eq!(bar(2.0, 4), "⣤⣤⣤⣤");
     }
 
     #[test]
     fn bar_clamped_below() {
-        assert_eq!(bar(-1.0, 4), "░░░░");
+        assert_eq!(bar(-1.0, 4), "⠀⠀⠀⠀");
+    }
+
+    #[test]
+    fn state_word_sleeping() {
+        assert_eq!(state_word('S'), "Sleeping");
+    }
+
+    #[test]
+    fn state_word_running() {
+        assert_eq!(state_word('R'), "Running");
     }
 
     #[test]

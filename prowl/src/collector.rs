@@ -71,7 +71,7 @@ pub async fn run(
                             .downcast_ref::<procfs::ProcError>()
                             .is_some_and(|pe| matches!(pe, procfs::ProcError::NotFound(_)))
                         {
-                            eprintln!("pidtree: collector error: {e:#}");
+                            eprintln!("prowl: collector error: {e:#}");
                         }
                         break;
                     }

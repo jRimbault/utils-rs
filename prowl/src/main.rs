@@ -1,4 +1,4 @@
-//! `pidtree` — TUI process-tree monitor.
+//! `prowl` — TUI process-tree monitor.
 //!
 //! Architecture follows the functional-core / imperative-shell pattern:
 //!

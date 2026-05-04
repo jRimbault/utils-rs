@@ -21,7 +21,7 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
     let header = Row::new(vec![
         Cell::new(Line::from("PID").centered()),
         Cell::new("USER"),
-        Cell::new("S"),
+        Cell::new("STATE"),
         Cell::new("CPU%"),
         Cell::new("CPU"),
         Cell::new("MEM%"),
@@ -29,7 +29,7 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
         Cell::new("RES"),
         Cell::new("Command"),
     ])
-    .style(Style::new().dim());
+    .style(Style::new().fg(Color::White));
 
     let rows: Vec<Row> = app
         .flat_rows
@@ -57,7 +57,7 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
             Row::new(vec![
                 Cell::new(format!("{:>7}", fr.pid)),
                 Cell::new(format!("{:<8}", fr.user)),
-                Cell::new(format!(" {} ", fr.state)),
+                Cell::new(format!(" {:<9}", format::state_word(fr.state))),
                 Cell::new(format!("{:>4.1}", fr.cpu_pct)).style(Style::new().fg(cpu_color)),
                 Cell::new(cpu_bar).style(Style::new().fg(cpu_color)),
                 Cell::new(format!("{:>4.1}", fr.mem_pct)).style(Style::new().fg(mem_color)),
@@ -70,15 +70,15 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let widths = [
-        Constraint::Length(8),  // PID
-        Constraint::Length(9),  // USER
-        Constraint::Length(3),  // S
-        Constraint::Length(5),  // CPU%
-        Constraint::Length(10), // CPU bar
-        Constraint::Length(5),  // MEM%
-        Constraint::Length(10), // MEM bar
-        Constraint::Length(8),  // RES
-        Constraint::Fill(1),    // Command
+        Constraint::Length(8),   // PID
+        Constraint::Length(9),   // USER
+        Constraint::Length(11),  // STATE
+        Constraint::Length(5),   // CPU%
+        Constraint::Length(10),  // CPU bar
+        Constraint::Length(5),   // MEM%
+        Constraint::Length(10),  // MEM bar
+        Constraint::Length(8),   // RES
+        Constraint::Fill(1),     // Command
     ];
 
     let table = Table::new(rows, widths)

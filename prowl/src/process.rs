@@ -205,9 +205,9 @@ pub fn collect_tree(
                     Some(ProcessNode {
                         pid: task.tid,
                         name: tstat.comm.clone(),
-                        // Threads share the parent address space; show the parent's
-                        // full command with the thread's kernel-visible name in brackets.
-                        cmdline: format!("{cmdline} [{}]", tstat.comm),
+                        // Threads show only their kernel-visible name; the parent
+                        // binary is already visible via the tree structure.
+                        cmdline: tstat.comm.clone(),
                         user: user.clone(),
                         state: tstat.state,
                         cpu_pct: thread_cpu,
@@ -289,11 +289,23 @@ fn flatten_node(
         format!("{prefix}├─ ")
     };
 
-    // Threads have no cmdline; use name as display fallback.
-    let cmdline = if node.cmdline.is_empty() {
+    // Root shows full cmdline; child processes strip argv[0] since the binary
+    // is already implied by the tree context; threads show their kernel name.
+    let cmdline = if is_root {
+        if node.cmdline.is_empty() {
+            node.name.clone()
+        } else {
+            node.cmdline.clone()
+        }
+    } else if node.is_thread {
         node.name.clone()
     } else {
-        node.cmdline.clone()
+        // Strip argv[0] (the binary path) and show just the arguments.
+        // Falls back to the short process name when there are no arguments.
+        match node.cmdline.find(' ') {
+            Some(pos) => node.cmdline[pos + 1..].to_owned(),
+            None => node.name.clone(),
+        }
     };
 
     out.push(FlatRow {

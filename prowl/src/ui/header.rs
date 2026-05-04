@@ -26,7 +26,7 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             Block::bordered()
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(Color::DarkGray))
-                .title(Span::styled(" pidtree ", Style::new().fg(Color::Red).bold())),
+                .title(Span::styled(" prowl ", Style::new().fg(Color::Cyan).bold())),
             area,
         );
         return;
@@ -36,7 +36,7 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(Color::DarkGray))
-        .title(Span::styled(" pidtree ", Style::new().fg(Color::Red).bold()));
+        .title(Span::styled(" prowl ", Style::new().fg(Color::Cyan).bold()));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -78,7 +78,7 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Line::from(vec![
             Span::raw("  "),
             label("CMD: "),
-            Span::styled(root.cmdline.clone(), Style::new().fg(Color::White)),
+            value(&root.cmdline),
         ])),
         cmd_row,
     );
@@ -124,7 +124,7 @@ fn render_cpu_panel(
         let label_style = if r == 0 {
             Style::new().fg(cpu_color).bold()
         } else {
-            Style::new().fg(Color::Red)
+            Style::new().fg(Color::White)
         };
         frame.render_widget(
             Paragraph::new(Span::styled(label_text, label_style)),
@@ -163,7 +163,7 @@ fn render_info_panel(
         Some(Line::from(vec![
             Span::raw("  "),
             label("Status: "),
-            value(&format!("{:<10}", root.state)),
+            value(&format!("{:<12}", format::state_word(root.state))),
             label("Elapsed: "),
             value(&format!("{:<12}", format::format_duration(root.elapsed))),
             label("IO/R: "),
@@ -224,7 +224,7 @@ fn render_sparkline_row(
     .areas(area);
 
     frame.render_widget(
-        Paragraph::new(Span::styled(left_label.to_owned(), Style::new().fg(Color::Red))),
+        Paragraph::new(Span::styled(left_label.to_owned(), Style::new().fg(Color::White))),
         left,
     );
 
@@ -250,6 +250,8 @@ fn render_sparkline_row(
 /// Each column encodes two consecutive samples (left/right braille dot columns)
 /// mapped to 0-4 filled dot rows from the bottom.  The most-recent sample sits
 /// at the rightmost column; the trace grows right-to-left as history fills in.
+/// A baseline row of bottom dots is always visible so the graph area reads
+/// clearly even when all values are zero.
 fn braille_graph(history: &std::collections::VecDeque<u64>, width: usize) -> String {
     if width == 0 {
         return String::new();
@@ -262,7 +264,14 @@ fn braille_graph(history: &std::collections::VecDeque<u64>, width: usize) -> Str
         samples[n - 1 - i] = v;
     }
     (0..width)
-        .map(|col| braille_cell(samples[2 * col], samples[2 * col + 1], max))
+        .map(|col| {
+            let lv = samples[2 * col];
+            let rv = samples[2 * col + 1];
+            // Always show at least 1 dot height for the baseline.
+            let lh = ((lv * 4) / max).min(4).max(1) as usize;
+            let rh = ((rv * 4) / max).min(4).max(1) as usize;
+            braille_cell_heights(lh, rh)
+        })
         .collect()
 }
 
@@ -272,6 +281,7 @@ fn braille_graph(history: &std::collections::VecDeque<u64>, width: usize) -> Str
 /// terminal row contributes 4 braille dot levels, so `rows` rows yield
 /// `rows × 4` distinct fill heights.  Values are scaled to the history maximum
 /// and filled from the bottom upward, identical to btop's graph style.
+/// The bottom row always shows at least 1 dot height as a visible baseline.
 fn braille_graph_multi(
     history: &std::collections::VecDeque<u64>,
     width: usize,
@@ -289,6 +299,7 @@ fn braille_graph_multi(
     }
 
     let total_levels = (rows as u64) * 4;
+    let bottom_row = rows - 1;
 
     (0..rows)
         .map(|row| {
@@ -298,8 +309,13 @@ fn braille_graph_multi(
                 .map(|col| {
                     let lv = (samples[2 * col]     * total_levels) / max;
                     let rv = (samples[2 * col + 1] * total_levels) / max;
-                    let lh = lv.saturating_sub(level_base).min(4) as usize;
-                    let rh = rv.saturating_sub(level_base).min(4) as usize;
+                    let mut lh = lv.saturating_sub(level_base).min(4) as usize;
+                    let mut rh = rv.saturating_sub(level_base).min(4) as usize;
+                    // Always show a baseline dot in the bottom row.
+                    if row == bottom_row {
+                        lh = lh.max(1);
+                        rh = rh.max(1);
+                    }
                     braille_cell_heights(lh, rh)
                 })
                 .collect()
@@ -322,16 +338,10 @@ fn braille_cell_heights(lh: usize, rh: usize) -> char {
     char::from_u32(0x2800 | u32::from(LEFT[lh] | RIGHT[rh])).unwrap_or(' ')
 }
 
-fn braille_cell(left_val: u64, right_val: u64, max: u64) -> char {
-    let lh = ((left_val  * 4) / max).min(4) as usize;
-    let rh = ((right_val * 4) / max).min(4) as usize;
-    braille_cell_heights(lh, rh)
-}
-
 fn label(s: &str) -> Span<'static> {
-    Span::styled(s.to_owned(), Style::new().fg(Color::Red))
+    Span::styled(s.to_owned(), Style::new().fg(Color::White))
 }
 
 fn value(s: &str) -> Span<'static> {
-    Span::styled(s.to_owned(), Style::new().fg(Color::White))
+    Span::styled(s.to_owned(), Style::new().fg(Color::White).bold())
 }

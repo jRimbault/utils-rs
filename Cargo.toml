@@ -17,7 +17,7 @@ members = [
     "xkcd_lock",
     "find_projects",
     "pingwatch",
-    "pidtree",
+    "prowl",
 ]
 
 [profile.release.package.pingwatch]
