@@ -11,6 +11,8 @@ const HISTORY_CAPACITY: usize = 200;
 
 pub struct App {
     pub root: Option<ProcessNode>,
+    /// Name of the observed root process; displayed in the header title.
+    pub name: String,
     pub flat_rows: Vec<FlatRow>,
     /// Index into `flat_rows` for keyboard selection.
     pub selected: usize,
@@ -33,6 +35,7 @@ impl App {
     pub fn new(show_threads: bool) -> Self {
         Self {
             root: None,
+            name: String::new(),
             flat_rows: Vec::new(),
             selected: 0,
             table_state: ratatui::widgets::TableState::default(),
@@ -47,6 +50,7 @@ impl App {
 
     /// Replace the current snapshot with a freshly collected one.
     pub fn apply_snapshot(&mut self, root: ProcessNode) {
+        self.name = root.name.clone();
         push_history(&mut self.cpu_history, (root.cpu_pct * 10.0) as u64);
         push_history(&mut self.mem_history, (root.mem_pct * 10.0) as u64);
         self.flat_rows = flatten(&root, self.show_threads, &self.collapsed);

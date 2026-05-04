@@ -21,12 +21,13 @@ use ratatui::{
 };
 
 pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
+    let title = format!(" {} ", if app.name.is_empty() { "prowl" } else { &app.name });
     let Some(root) = &app.root else {
         frame.render_widget(
             Block::bordered()
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(Color::DarkGray))
-                .title(Span::styled(" prowl ", Style::new().fg(Color::Cyan).bold())),
+                .title(Span::styled(title, Style::new().fg(Color::Cyan).bold())),
             area,
         );
         return;
@@ -36,24 +37,20 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(Color::DarkGray))
-        .title(Span::styled(" prowl ", Style::new().fg(Color::Cyan).bold()));
+        .title(Span::styled(
+            format!(" {} ", root.name),
+            Style::new().fg(Color::Cyan).bold(),
+        ));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let [top_row, main_area, cmd_row] = Layout::vertical([
+    let [_top_row, main_area, cmd_row] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
         Constraint::Length(1),
     ])
     .areas(inner);
-
-    // Row 0: PID + process name.
-    let pid_name = format!(" {:>7}  {}", root.pid, root.name);
-    frame.render_widget(
-        Paragraph::new(Span::styled(pid_name, Style::new().bold().fg(Color::White))),
-        top_row,
-    );
 
     // Rows 1-5: CPU graph panel (left) | info panel (right).
     let [cpu_panel, info_panel] = Layout::horizontal([
