@@ -30,26 +30,22 @@ struct ColumnSet {
 impl ColumnSet {
     /// Pick the richest column set that leaves at least `min_cmd` columns for Command.
     fn for_width(w: u16) -> Self {
-        // Fixed overhead: PID(8) + spacing(1 per column) + CPU%(5) + Command(Fill).
-        // Calculate available width minus the always-shown columns.
-        let base = 8 + 5; // PID + CPU%
-        let remaining = w.saturating_sub(base + 4); // borders + min spacing
-
-        // Progressive tiers — each tier adds columns from the widest layout.
-        if remaining >= 75 {
-            // Full layout: USER(9) STATE(11) CPU_BAR(10) MEM%(5) MEM_BAR(10) RES(8) ELAPSED(9)
+        // Thresholds based on total inner width. Each tier ensures at least
+        // ~25 columns remain for the Command column.
+        if w >= 120 {
+            // Full layout
             Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: true, res: true, elapsed: true }
-        } else if remaining >= 56 {
+        } else if w >= 100 {
             // Drop ELAPSED and MEM bar
             Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: false, res: true, elapsed: false }
-        } else if remaining >= 40 {
-            // Drop CPU bar, RES, abbreviate state
+        } else if w >= 70 {
+            // Drop CPU bar, RES; abbreviate STATE
             Self { user: true, state_full: false, cpu_bar: false, mem_pct: true, mem_bar: false, res: false, elapsed: false }
-        } else if remaining >= 25 {
+        } else if w >= 50 {
             // Drop USER, MEM%
             Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false }
         } else {
-            // Minimal: PID + CPU% + Command
+            // Minimal: PID + STATE(char) + CPU% + Command
             Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false }
         }
     }
