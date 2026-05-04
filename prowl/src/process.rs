@@ -267,13 +267,14 @@ fn compute_elapsed(starttime: u64, ticks_per_second: u64) -> Duration {
 /// to reproduce an htop-style tree appearance in a columnar table.
 pub fn flatten(root: &ProcessNode, show_threads: bool) -> Vec<FlatRow> {
     let mut out = Vec::new();
-    flatten_node(root, "", true, true, show_threads, &mut out);
+    flatten_node(root, &root.name, "", true, true, show_threads, &mut out);
     out
 }
 
 /// Recursive helper that carries the accumulated indentation prefix.
 fn flatten_node(
     node: &ProcessNode,
+    root_name: &str,
     prefix: &str,
     is_root: bool,
     is_last: bool,
@@ -299,12 +300,18 @@ fn flatten_node(
         }
     } else if node.is_thread {
         node.name.clone()
-    } else {
-        // Strip argv[0] (the binary path) and show just the arguments.
-        // Falls back to the short process name when there are no arguments.
+    } else if node.name == root_name {
+        // Same binary as the root — strip argv[0] and show just the arguments.
         match node.cmdline.find(' ') {
             Some(pos) => node.cmdline[pos + 1..].to_owned(),
             None => node.name.clone(),
+        }
+    } else {
+        // Different binary — show the full cmdline.
+        if node.cmdline.is_empty() {
+            node.name.clone()
+        } else {
+            node.cmdline.clone()
         }
     };
 
@@ -336,7 +343,7 @@ fn flatten_node(
         .collect();
     let n = visible.len();
     for (i, child) in visible.iter().enumerate() {
-        flatten_node(child, &child_prefix, false, i == n - 1, show_threads, out);
+        flatten_node(child, root_name, &child_prefix, false, i == n - 1, show_threads, out);
     }
 }
 
