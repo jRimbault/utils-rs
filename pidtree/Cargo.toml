@@ -1,0 +1,17 @@
+[package]
+name = "pidtree"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "pidtree"
+path = "src/main.rs"
+
+[dependencies]
+anyhow    = "1"
+clap      = { version = "4", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures   = { version = "0.3", default-features = false, features = ["std"] }
+procfs    = { version = "0.18", features = ["chrono"] }
+ratatui   = "0.30"
+tokio     = { version = "1", features = ["macros", "rt", "sync", "time"] }
