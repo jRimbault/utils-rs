@@ -29,6 +29,8 @@ pub struct ProcessNode {
     /// Bytes/sec written since the previous sample.
     pub io_write_rate: u64,
     pub elapsed: Duration,
+    /// Total CPU time consumed (utime + stime from `/proc/<pid>/stat`).
+    pub cpu_time: Duration,
     pub parent_name: String,
     pub children: Vec<ProcessNode>,
     pub is_thread: bool,
@@ -52,6 +54,8 @@ pub struct FlatRow {
     pub mem_pct: f64,
     pub mem_rss_bytes: u64,
     pub elapsed: Duration,
+    /// Total CPU time consumed (utime + stime from `/proc/<pid>/stat`).
+    pub cpu_time: Duration,
     pub is_thread: bool,
     /// Whether this node has visible children (used for collapse indicator).
     pub has_children: bool,
@@ -115,6 +119,8 @@ pub fn collect_tree(
         0.0
     };
     prev_ticks.insert(root_pid, current_ticks);
+    // Total CPU time (user + system) accumulated by this process.
+    let cpu_time = Duration::from_secs_f64(current_ticks as f64 / ticks_per_second as f64);
 
     // stat.rss is in pages; convert to bytes then to a percentage of total RAM.
     let mem_rss_bytes = stat.rss * page_size;
@@ -207,6 +213,8 @@ pub fn collect_tree(
                         0.0
                     };
                     prev_ticks.insert(task.tid, thread_ticks);
+                    let thread_cpu_time =
+                        Duration::from_secs_f64(thread_ticks as f64 / ticks_per_second as f64);
                     // /proc/<pid>/task/<tid>/comm gives the full thread name
                     // without the 15-char truncation of stat.comm.
                     let thread_name = fs::read_to_string(format!("/proc/{root_pid}/task/{}/comm", task.tid))
@@ -224,6 +232,7 @@ pub fn collect_tree(
                         io_read_rate: 0,
                         io_write_rate: 0,
                         elapsed: Duration::ZERO,
+                        cpu_time: thread_cpu_time,
                         parent_name: stat.comm.clone(),
                         children: Vec::new(),
                         is_thread: true,
@@ -249,6 +258,7 @@ pub fn collect_tree(
         io_read_rate,
         io_write_rate,
         elapsed,
+        cpu_time,
         parent_name,
         children: all_children,
         is_thread: false,
@@ -345,6 +355,7 @@ fn flatten_node(
         mem_pct: node.mem_pct,
         mem_rss_bytes: node.mem_rss_bytes,
         elapsed: node.elapsed,
+        cpu_time: node.cpu_time,
         is_thread: node.is_thread,
         has_children: !visible_children.is_empty(),
         is_collapsed,
@@ -388,6 +399,7 @@ mod tests {
             io_read_rate: 0,
             io_write_rate: 0,
             elapsed: Duration::ZERO,
+            cpu_time: Duration::ZERO,
             parent_name: String::new(),
             children: Vec::new(),
             is_thread: false,

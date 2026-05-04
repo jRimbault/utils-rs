@@ -168,6 +168,11 @@ fn render_info_panel(
             value(&root.user),
         ])),
         None, // memory row — rendered via render_sparkline_row
+        Some(Line::from(vec![
+            Span::raw("  "),
+            label("CPU time: "),
+            value(&format::format_duration(root.cpu_time)),
+        ])),
     ];
 
     for r in 0..h {

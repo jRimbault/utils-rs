@@ -25,6 +25,8 @@ struct ColumnSet {
     mem_bar: bool,
     res: bool,
     elapsed: bool,
+    /// Show accumulated CPU time alongside wall-clock elapsed.
+    cpu_time: bool,
 }
 
 impl ColumnSet {
@@ -32,21 +34,24 @@ impl ColumnSet {
     fn for_width(w: u16) -> Self {
         // Thresholds based on total inner width. Each tier ensures at least
         // ~25 columns remain for the Command column.
-        if w >= 120 {
+        if w >= 140 {
+            // Full layout + CPU time column
+            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: true, res: true, elapsed: true, cpu_time: true }
+        } else if w >= 120 {
             // Full layout
-            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: true, res: true, elapsed: true }
+            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: true, res: true, elapsed: true, cpu_time: false }
         } else if w >= 100 {
             // Drop ELAPSED and MEM bar
-            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: false, res: true, elapsed: false }
+            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: false, res: true, elapsed: false, cpu_time: false }
         } else if w >= 70 {
             // Drop CPU bar, RES; abbreviate STATE
-            Self { user: true, state_full: false, cpu_bar: false, mem_pct: true, mem_bar: false, res: false, elapsed: false }
+            Self { user: true, state_full: false, cpu_bar: false, mem_pct: true, mem_bar: false, res: false, elapsed: false, cpu_time: false }
         } else if w >= 50 {
             // Drop USER, MEM%
-            Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false }
+            Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false, cpu_time: false }
         } else {
             // Minimal: PID + STATE(char) + CPU% + Command
-            Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false }
+            Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false, cpu_time: false }
         }
     }
 }
@@ -93,6 +98,10 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
     }
     if cols.elapsed {
         header_cells.push(Cell::new("ELAPSED"));
+        widths.push(Constraint::Length(9));
+    }
+    if cols.cpu_time {
+        header_cells.push(Cell::new("CPUT"));
         widths.push(Constraint::Length(9));
     }
     header_cells.push(Cell::new("Command"));
@@ -158,6 +167,9 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
             }
             if cols.elapsed {
                 cells.push(Cell::new(if is_thread { String::new() } else { format!("{:>8}", format::format_duration(fr.elapsed)) }));
+            }
+            if cols.cpu_time {
+                cells.push(Cell::new(format!("{:>8}", format::format_duration(fr.cpu_time))));
             }
             cells.push(Cell::new(cmd));
 
