@@ -64,14 +64,16 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
 
             Row::new(vec![
                 Cell::new(format!("{:>7}", fr.pid)),
-                Cell::new(format!("{:<8}", fr.user)),
+                Cell::new(if fr.is_thread { String::new() } else { format!("{:<8}", fr.user) }),
                 Cell::new(format!(" {:<9}", format::state_word(fr.state))),
                 Cell::new(format!("{:>4.1}", fr.cpu_pct)).style(Style::new().fg(cpu_color)),
                 Cell::new(cpu_bar).style(Style::new().fg(cpu_color)),
-                Cell::new(format!("{:>4.1}", fr.mem_pct)).style(Style::new().fg(mem_color)),
-                Cell::new(mem_bar).style(Style::new().fg(mem_color)),
-                Cell::new(format!("{:>7}", format::format_bytes(fr.mem_rss_bytes))),
-                Cell::new(format!("{:>8}", format::format_duration(fr.elapsed))),
+                Cell::new(if fr.is_thread { String::new() } else { format!("{:>4.1}", fr.mem_pct) })
+                    .style(Style::new().fg(mem_color)),
+                Cell::new(if fr.is_thread { String::new() } else { mem_bar })
+                    .style(Style::new().fg(mem_color)),
+                Cell::new(if fr.is_thread { String::new() } else { format!("{:>7}", format::format_bytes(fr.mem_rss_bytes)) }),
+                Cell::new(if fr.is_thread { String::new() } else { format!("{:>8}", format::format_duration(fr.elapsed)) }),
                 Cell::new(cmd),
             ])
             .style(base_style)
