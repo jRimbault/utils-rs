@@ -9,11 +9,11 @@
 
 use crate::{app::App, format};
 use ratatui::{
+    Frame,
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Row, Table},
-    Frame,
 };
 
 /// Which columns are visible at the current terminal width.
@@ -36,22 +36,76 @@ impl ColumnSet {
         // ~25 columns remain for the Command column.
         if w >= 140 {
             // Full layout + CPU time column
-            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: true, res: true, elapsed: true, cpu_time: true }
+            Self {
+                user: true,
+                state_full: true,
+                cpu_bar: true,
+                mem_pct: true,
+                mem_bar: true,
+                res: true,
+                elapsed: true,
+                cpu_time: true,
+            }
         } else if w >= 120 {
             // Full layout
-            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: true, res: true, elapsed: true, cpu_time: false }
+            Self {
+                user: true,
+                state_full: true,
+                cpu_bar: true,
+                mem_pct: true,
+                mem_bar: true,
+                res: true,
+                elapsed: true,
+                cpu_time: false,
+            }
         } else if w >= 100 {
             // Drop ELAPSED and MEM bar
-            Self { user: true, state_full: true, cpu_bar: true, mem_pct: true, mem_bar: false, res: true, elapsed: false, cpu_time: false }
+            Self {
+                user: true,
+                state_full: true,
+                cpu_bar: true,
+                mem_pct: true,
+                mem_bar: false,
+                res: true,
+                elapsed: false,
+                cpu_time: false,
+            }
         } else if w >= 70 {
             // Drop CPU bar, RES; abbreviate STATE
-            Self { user: true, state_full: false, cpu_bar: false, mem_pct: true, mem_bar: false, res: false, elapsed: false, cpu_time: false }
+            Self {
+                user: true,
+                state_full: false,
+                cpu_bar: false,
+                mem_pct: true,
+                mem_bar: false,
+                res: false,
+                elapsed: false,
+                cpu_time: false,
+            }
         } else if w >= 50 {
             // Drop USER, MEM%
-            Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false, cpu_time: false }
+            Self {
+                user: false,
+                state_full: false,
+                cpu_bar: false,
+                mem_pct: false,
+                mem_bar: false,
+                res: false,
+                elapsed: false,
+                cpu_time: false,
+            }
         } else {
             // Minimal: PID + STATE(char) + CPU% + Command
-            Self { user: false, state_full: false, cpu_bar: false, mem_pct: false, mem_bar: false, res: false, elapsed: false, cpu_time: false }
+            Self {
+                user: false,
+                state_full: false,
+                cpu_bar: false,
+                mem_pct: false,
+                mem_bar: false,
+                res: false,
+                elapsed: false,
+                cpu_time: false,
+            }
         }
     }
 }
@@ -139,7 +193,11 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
             let mut cells: Vec<Cell> = vec![Cell::new(format!("{:>7}", fr.pid))];
 
             if cols.user {
-                cells.push(Cell::new(if is_thread { String::new() } else { format!("{:<8}", fr.user) }));
+                cells.push(Cell::new(if is_thread {
+                    String::new()
+                } else {
+                    format!("{:<8}", fr.user)
+                }));
             }
             if cols.state_full {
                 cells.push(Cell::new(format!(" {:<9}", format::state_word(fr.state))));
@@ -148,28 +206,49 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
             }
             cells.push(Cell::new(format!("{:>4.1}", fr.cpu_pct)).style(Style::new().fg(cpu_color)));
             if cols.cpu_bar {
-                cells.push(Cell::new(format::bar(fr.cpu_pct / 100.0, 8)).style(Style::new().fg(cpu_color)));
+                cells.push(
+                    Cell::new(format::bar(fr.cpu_pct / 100.0, 8)).style(Style::new().fg(cpu_color)),
+                );
             }
             if cols.mem_pct {
                 cells.push(
-                    Cell::new(if is_thread { String::new() } else { format!("{:>4.1}", fr.mem_pct) })
-                        .style(Style::new().fg(mem_color)),
+                    Cell::new(if is_thread {
+                        String::new()
+                    } else {
+                        format!("{:>4.1}", fr.mem_pct)
+                    })
+                    .style(Style::new().fg(mem_color)),
                 );
             }
             if cols.mem_bar {
                 cells.push(
-                    Cell::new(if is_thread { String::new() } else { format::bar(fr.mem_pct / 100.0, 8) })
-                        .style(Style::new().fg(mem_color)),
+                    Cell::new(if is_thread {
+                        String::new()
+                    } else {
+                        format::bar(fr.mem_pct / 100.0, 8)
+                    })
+                    .style(Style::new().fg(mem_color)),
                 );
             }
             if cols.res {
-                cells.push(Cell::new(if is_thread { String::new() } else { format!("{:>7}", format::format_bytes(fr.mem_rss_bytes)) }));
+                cells.push(Cell::new(if is_thread {
+                    String::new()
+                } else {
+                    format!("{:>7}", format::format_bytes(fr.mem_rss_bytes))
+                }));
             }
             if cols.elapsed {
-                cells.push(Cell::new(if is_thread { String::new() } else { format!("{:>8}", format::format_duration(fr.elapsed)) }));
+                cells.push(Cell::new(if is_thread {
+                    String::new()
+                } else {
+                    format!("{:>8}", format::format_duration(fr.elapsed))
+                }));
             }
             if cols.cpu_time {
-                cells.push(Cell::new(format!("{:>8}", format::format_duration(fr.cpu_time))));
+                cells.push(Cell::new(format!(
+                    "{:>8}",
+                    format::format_duration(fr.cpu_time)
+                )));
             }
             cells.push(Cell::new(cmd));
 

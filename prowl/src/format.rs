@@ -133,7 +133,10 @@ mod tests {
 
     #[test]
     fn format_duration_days() {
-        assert_eq!(format_duration(Duration::from_secs(86400 + 3600)), "1d 01:00");
+        assert_eq!(
+            format_duration(Duration::from_secs(86400 + 3600)),
+            "1d 01:00"
+        );
     }
 
     #[test]

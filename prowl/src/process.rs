@@ -11,7 +11,7 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-use procfs::process::{all_processes, Process};
+use procfs::process::{Process, all_processes};
 
 /// Full process/thread node in the tree.
 #[derive(Clone)]
@@ -111,8 +111,7 @@ pub fn collect_tree(
     let stat = proc.stat()?;
 
     let current_ticks = stat.utime + stat.stime;
-    let delta = current_ticks
-        .saturating_sub(*prev_ticks.get(&root_pid).unwrap_or(&current_ticks));
+    let delta = current_ticks.saturating_sub(*prev_ticks.get(&root_pid).unwrap_or(&current_ticks));
     let cpu_pct = if elapsed_secs > 0.0 {
         (delta as f64 / ticks_per_second as f64) / elapsed_secs * 100.0
     } else {
@@ -217,9 +216,10 @@ pub fn collect_tree(
                         Duration::from_secs_f64(thread_ticks as f64 / ticks_per_second as f64);
                     // /proc/<pid>/task/<tid>/comm gives the full thread name
                     // without the 15-char truncation of stat.comm.
-                    let thread_name = fs::read_to_string(format!("/proc/{root_pid}/task/{}/comm", task.tid))
-                        .map(|s| s.trim_end().to_owned())
-                        .unwrap_or_else(|_| tstat.comm.clone());
+                    let thread_name =
+                        fs::read_to_string(format!("/proc/{root_pid}/task/{}/comm", task.tid))
+                            .map(|s| s.trim_end().to_owned())
+                            .unwrap_or_else(|_| tstat.comm.clone());
                     Some(ProcessNode {
                         pid: task.tid,
                         name: thread_name.clone(),
@@ -288,20 +288,30 @@ pub fn flatten(
     show_threads: bool,
     collapsed: &std::collections::HashSet<i32>,
 ) -> Vec<FlatRow> {
+    let ctx = FlattenCtx {
+        root_name: &root.name,
+        show_threads,
+        collapsed,
+    };
     let mut out = Vec::new();
-    flatten_node(root, &root.name, "", true, true, show_threads, collapsed, &mut out);
+    flatten_node(root, &ctx, "", true, true, &mut out);
     out
+}
+
+/// Static context shared across all recursive calls to `flatten_node`.
+struct FlattenCtx<'a> {
+    root_name: &'a str,
+    show_threads: bool,
+    collapsed: &'a std::collections::HashSet<i32>,
 }
 
 /// Recursive helper that carries the accumulated indentation prefix.
 fn flatten_node(
     node: &ProcessNode,
-    root_name: &str,
+    ctx: &FlattenCtx<'_>,
     prefix: &str,
     is_root: bool,
     is_last: bool,
-    show_threads: bool,
-    collapsed: &std::collections::HashSet<i32>,
     out: &mut Vec<FlatRow>,
 ) {
     // Root node gets no connector; subsequent nodes get tree-art glyphs.
@@ -323,7 +333,7 @@ fn flatten_node(
         }
     } else if node.is_thread {
         node.name.clone()
-    } else if node.name == root_name {
+    } else if node.name == ctx.root_name {
         // Same binary as the root — strip argv[0] and show just the arguments.
         match node.cmdline.find(' ') {
             Some(pos) => node.cmdline[pos + 1..].to_owned(),
@@ -341,9 +351,9 @@ fn flatten_node(
     let visible_children: Vec<_> = node
         .children
         .iter()
-        .filter(|c| show_threads || !c.is_thread)
+        .filter(|c| ctx.show_threads || !c.is_thread)
         .collect();
-    let is_collapsed = collapsed.contains(&node.pid);
+    let is_collapsed = ctx.collapsed.contains(&node.pid);
 
     out.push(FlatRow {
         connector,
@@ -377,7 +387,7 @@ fn flatten_node(
 
     let n = visible_children.len();
     for (i, child) in visible_children.iter().enumerate() {
-        flatten_node(child, root_name, &child_prefix, false, i == n - 1, show_threads, collapsed, out);
+        flatten_node(child, ctx, &child_prefix, false, i == n - 1, out);
     }
 }
 
@@ -460,7 +470,11 @@ mod tests {
         root.children.push(make_node(3, "child2"));
         let collapsed = HashSet::from([1]);
         let rows = flatten(&root, false, &collapsed);
-        assert_eq!(rows.len(), 1, "children should be hidden when root is collapsed");
+        assert_eq!(
+            rows.len(),
+            1,
+            "children should be hidden when root is collapsed"
+        );
         assert!(rows[0].is_collapsed);
     }
 

@@ -35,9 +35,7 @@ pub async fn run(
         let mut io = std::mem::take(&mut prev_io);
 
         let outcome = task::spawn_blocking(move || {
-            let mem_total_kb = procfs::Meminfo::current()
-                .map(|m| m.mem_total)
-                .unwrap_or(1);
+            let mem_total_kb = procfs::Meminfo::current().map(|m| m.mem_total).unwrap_or(1);
             let result = collect_tree(
                 root_pid,
                 &mut ticks,

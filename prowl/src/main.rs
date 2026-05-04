@@ -44,7 +44,9 @@ struct Args {
 }
 
 fn parse_millis(s: &str) -> Result<Duration, String> {
-    let ms: u64 = s.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+    let ms: u64 = s
+        .parse()
+        .map_err(|e: std::num::ParseIntError| e.to_string())?;
     if ms == 0 {
         return Err("value must be at least 1ms".to_string());
     }

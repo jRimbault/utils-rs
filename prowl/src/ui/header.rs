@@ -13,15 +13,22 @@
 
 use crate::{app::App, format};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame,
 };
 
 pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
-    let title = format!(" {} ", if app.name.is_empty() { "prowl" } else { &app.name });
+    let title = format!(
+        " {} ",
+        if app.name.is_empty() {
+            "prowl"
+        } else {
+            &app.name
+        }
+    );
     let Some(root) = &app.root else {
         frame.render_widget(
             Block::bordered()
@@ -53,11 +60,8 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     .areas(inner);
 
     // Rows 1-5: CPU graph panel (left) | info panel (right).
-    let [cpu_panel, info_panel] = Layout::horizontal([
-        Constraint::Percentage(35),
-        Constraint::Fill(1),
-    ])
-    .areas(main_area);
+    let [cpu_panel, info_panel] =
+        Layout::horizontal([Constraint::Percentage(35), Constraint::Fill(1)]).areas(main_area);
 
     render_cpu_panel(frame, cpu_panel, &app.cpu_history, root.cpu_pct);
     render_info_panel(frame, info_panel, root, &app.mem_history);
@@ -88,11 +92,8 @@ fn render_cpu_panel(
         return;
     }
     const LABEL_W: u16 = 7;
-    let [label_col, graph_col] = Layout::horizontal([
-        Constraint::Length(LABEL_W),
-        Constraint::Fill(1),
-    ])
-    .areas(area);
+    let [label_col, graph_col] =
+        Layout::horizontal([Constraint::Length(LABEL_W), Constraint::Fill(1)]).areas(area);
 
     let rows = graph_col.height as usize;
     let graph_rows = braille_graph_multi(history, graph_col.width as usize, rows);
@@ -218,7 +219,10 @@ fn render_sparkline_row(
     .areas(area);
 
     frame.render_widget(
-        Paragraph::new(Span::styled(left_label.to_owned(), Style::new().fg(Color::White))),
+        Paragraph::new(Span::styled(
+            left_label.to_owned(),
+            Style::new().fg(Color::White),
+        )),
         left,
     );
 
@@ -262,8 +266,8 @@ fn braille_graph(history: &std::collections::VecDeque<u64>, width: usize) -> Str
             let lv = samples[2 * col];
             let rv = samples[2 * col + 1];
             // Always show at least 1 dot height for the baseline.
-            let lh = ((lv * 4) / max).min(4).max(1) as usize;
-            let rh = ((rv * 4) / max).min(4).max(1) as usize;
+            let lh = ((lv * 4) / max).clamp(1, 4) as usize;
+            let rh = ((rv * 4) / max).clamp(1, 4) as usize;
             braille_cell_heights(lh, rh)
         })
         .collect()
@@ -301,7 +305,7 @@ fn braille_graph_multi(
             let level_base = (rows - 1 - row) as u64 * 4;
             (0..width)
                 .map(|col| {
-                    let lv = (samples[2 * col]     * total_levels) / max;
+                    let lv = (samples[2 * col] * total_levels) / max;
                     let rv = (samples[2 * col + 1] * total_levels) / max;
                     let mut lh = lv.saturating_sub(level_base).min(4) as usize;
                     let mut rh = rv.saturating_sub(level_base).min(4) as usize;
@@ -327,7 +331,7 @@ fn braille_graph_multi(
 /// Row 1 (top):    left = bit0 (0x01), right = bit3 (0x08)
 /// ```
 fn braille_cell_heights(lh: usize, rh: usize) -> char {
-    const LEFT:  [u8; 5] = [0x00, 0x40, 0x44, 0x46, 0x47];
+    const LEFT: [u8; 5] = [0x00, 0x40, 0x44, 0x46, 0x47];
     const RIGHT: [u8; 5] = [0x00, 0x80, 0xA0, 0xB0, 0xB8];
     char::from_u32(0x2800 | u32::from(LEFT[lh] | RIGHT[rh])).unwrap_or(' ')
 }
