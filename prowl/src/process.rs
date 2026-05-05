@@ -478,40 +478,38 @@ fn collect_threads(
     elapsed_secs: f64,
     cfg: &SystemConfig,
 ) -> Vec<Node> {
-    proc.tasks()
-        .map(|tasks| {
-            tasks
-                .filter_map(|r| r.ok())
-                .filter(|t| t.tid != pid.get())
-                .filter_map(|task| {
-                    let tstat = task.stat().ok()?;
-                    let tid = Pid::new(task.tid);
-                    let (cpu_pct, cpu_time) =
-                        sample_cpu(tid, &tstat, prev_ticks, elapsed_secs, cfg);
-                    let thread_name =
-                        fs::read_to_string(format!("/proc/{}/task/{}/comm", pid.get(), task.tid))
-                            .map(|s| s.trim_end().to_owned())
-                            .unwrap_or_else(|_| tstat.comm.clone());
-                    Some(Node {
-                        pid: tid,
-                        name: thread_name.clone(),
-                        cmdline: thread_name,
-                        user: user.to_owned(),
-                        state: tstat.state,
-                        cpu_pct,
-                        mem_rss_bytes: tstat.rss * cfg.page_size(),
-                        mem_pct: Percent::new(0.0),
-                        io: IoRate::default(),
-                        elapsed: Duration::ZERO,
-                        cpu_time,
-                        parent_name: stat.comm.clone(),
-                        children: Tree::default(),
-                        is_thread: true,
-                    })
-                })
-                .collect()
+    let Ok(tasks) = proc.tasks() else {
+        return Vec::new();
+    };
+    tasks
+        .filter_map(|r| r.ok())
+        .filter(|t| t.tid != pid.get())
+        .filter_map(|task| {
+            let tstat = task.stat().ok()?;
+            let tid = Pid::new(task.tid);
+            let (cpu_pct, cpu_time) = sample_cpu(tid, &tstat, prev_ticks, elapsed_secs, cfg);
+            let thread_name =
+                fs::read_to_string(format!("/proc/{}/task/{}/comm", pid.get(), task.tid))
+                    .map(|s| s.trim_end().to_owned())
+                    .unwrap_or_else(|_| tstat.comm.clone());
+            Some(Node {
+                pid: tid,
+                name: thread_name.clone(),
+                cmdline: thread_name,
+                user: user.to_owned(),
+                state: tstat.state,
+                cpu_pct,
+                mem_rss_bytes: tstat.rss * cfg.page_size(),
+                mem_pct: Percent::new(0.0),
+                io: IoRate::default(),
+                elapsed: Duration::ZERO,
+                cpu_time,
+                parent_name: stat.comm.clone(),
+                children: Tree::default(),
+                is_thread: true,
+            })
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 /// Compute how long the process has been running.
