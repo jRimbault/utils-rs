@@ -210,21 +210,11 @@ fn flatten_node(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::Node;
-
-    // Construct a minimal Node for testing. This is in the same crate so the
-    // struct literal is accessible (fields are private but same-crate access
-    // is permitted via the test module).
-    fn make_node(pid: i32, name: &str) -> Node {
-        // Node fields are private; use process::make_test_node exposed for tests,
-        // or construct via the public builder. Since Node has no public constructor,
-        // we call the module-level test helper defined in process.rs.
-        crate::process::make_test_node(pid, name)
-    }
+    use crate::process::tests::{make_test_node, make_test_thread, push_child, set_cmdline};
 
     #[test]
     fn flatten_single_node() {
-        let root = make_node(1, "root");
+        let root = make_test_node(1, "root");
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 1);
@@ -234,9 +224,9 @@ mod tests {
 
     #[test]
     fn flatten_two_children_connectors() {
-        let mut root = make_node(1, "root");
-        crate::process::push_child(&mut root, make_node(2, "child1"));
-        crate::process::push_child(&mut root, make_node(3, "child2"));
+        let mut root = make_test_node(1, "root");
+        push_child(&mut root, make_test_node(2, "child1"));
+        push_child(&mut root, make_test_node(3, "child2"));
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 3);
@@ -248,9 +238,9 @@ mod tests {
 
     #[test]
     fn flatten_thread_hidden_by_default() {
-        let mut root = make_node(1, "root");
-        let thread = crate::process::make_test_thread(10, "thread");
-        crate::process::push_child(&mut root, thread);
+        let mut root = make_test_node(1, "root");
+        let thread = make_test_thread(10, "thread");
+        push_child(&mut root, thread);
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 1, "thread should be hidden");
@@ -258,9 +248,9 @@ mod tests {
 
     #[test]
     fn flatten_thread_shown_when_requested() {
-        let mut root = make_node(1, "root");
-        let thread = crate::process::make_test_thread(10, "thread");
-        crate::process::push_child(&mut root, thread);
+        let mut root = make_test_node(1, "root");
+        let thread = make_test_thread(10, "thread");
+        push_child(&mut root, thread);
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, true, &no_collapsed);
         assert_eq!(rows.len(), 2, "thread should appear");
@@ -269,9 +259,9 @@ mod tests {
 
     #[test]
     fn flatten_collapsed_hides_children() {
-        let mut root = make_node(1, "root");
-        crate::process::push_child(&mut root, make_node(2, "child1"));
-        crate::process::push_child(&mut root, make_node(3, "child2"));
+        let mut root = make_test_node(1, "root");
+        push_child(&mut root, make_test_node(2, "child1"));
+        push_child(&mut root, make_test_node(3, "child2"));
         let collapsed = HashSet::from([Pid::new(1)]);
         let rows = flatten(&root, false, &collapsed);
         assert_eq!(
@@ -284,10 +274,10 @@ mod tests {
 
     #[test]
     fn flatten_collapsed_subtree() {
-        let mut root = make_node(1, "root");
-        let mut child = make_node(2, "child");
-        crate::process::push_child(&mut child, make_node(3, "grandchild"));
-        crate::process::push_child(&mut root, child);
+        let mut root = make_test_node(1, "root");
+        let mut child = make_test_node(2, "child");
+        push_child(&mut child, make_test_node(3, "grandchild"));
+        push_child(&mut root, child);
         // Collapse child (pid 2), not root.
         let collapsed = HashSet::from([Pid::new(2)]);
         let rows = flatten(&root, false, &collapsed);
@@ -298,29 +288,29 @@ mod tests {
 
     #[test]
     fn display_command_root_uses_full_cmdline() {
-        let mut node = make_node(1, "myapp");
-        crate::process::set_cmdline(&mut node, "myapp --foo bar");
+        let mut node = make_test_node(1, "myapp");
+        set_cmdline(&mut node, "myapp --foo bar");
         assert_eq!(display_command(&node, true, "myapp"), "myapp --foo bar");
     }
 
     #[test]
     fn display_command_same_binary_strips_argv0() {
-        let mut node = make_node(2, "myapp");
-        crate::process::set_cmdline(&mut node, "myapp --child-flag");
+        let mut node = make_test_node(2, "myapp");
+        set_cmdline(&mut node, "myapp --child-flag");
         assert_eq!(display_command(&node, false, "myapp"), "--child-flag");
     }
 
     #[test]
     fn display_command_same_binary_no_args_falls_back_to_name() {
-        let mut node = make_node(2, "myapp");
-        crate::process::set_cmdline(&mut node, "myapp");
+        let mut node = make_test_node(2, "myapp");
+        set_cmdline(&mut node, "myapp");
         assert_eq!(display_command(&node, false, "myapp"), "myapp");
     }
 
     #[test]
     fn display_command_thread_uses_name() {
-        let mut node = crate::process::make_test_thread(10, "worker");
-        crate::process::set_cmdline(&mut node, "some cmdline");
+        let mut node = make_test_thread(10, "worker");
+        set_cmdline(&mut node, "some cmdline");
         assert_eq!(display_command(&node, false, "myapp"), "worker");
     }
 }

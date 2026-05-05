@@ -170,54 +170,6 @@ impl Node {
     }
 }
 
-// --- Test helpers ---
-//
-// These functions are `pub` so that the `tree` module's tests can build
-// `Node` values without requiring a public constructor.  They are only
-// compiled in `#[cfg(test)]` contexts to keep them out of production code.
-
-/// Build a minimal process `Node` for unit tests.
-#[cfg(test)]
-pub fn make_test_node(pid: i32, name: &str) -> Node {
-    Node {
-        pid: Pid::new(pid),
-        name: name.to_owned(),
-        cmdline: String::new(),
-        user: String::new(),
-        state: 'S',
-        cpu_pct: Percent::new(0.0),
-        mem_rss_bytes: 0,
-        mem_pct: Percent::new(0.0),
-        io: IoRate::default(),
-        elapsed: Duration::ZERO,
-        cpu_time: Duration::ZERO,
-        parent_name: String::new(),
-        children: Vec::new(),
-        is_thread: false,
-    }
-}
-
-/// Build a minimal thread `Node` for unit tests.
-#[cfg(test)]
-pub fn make_test_thread(pid: i32, name: &str) -> Node {
-    Node {
-        is_thread: true,
-        ..make_test_node(pid, name)
-    }
-}
-
-/// Append a child to a `Node`; used only in tests.
-#[cfg(test)]
-pub fn push_child(parent: &mut Node, child: Node) {
-    parent.children.push(child);
-}
-
-/// Overwrite the `cmdline` field of a `Node`; used only in tests.
-#[cfg(test)]
-pub fn set_cmdline(node: &mut Node, cmdline: &str) {
-    node.cmdline = cmdline.to_owned();
-}
-
 /// Parse `/etc/passwd` into a `uid → username` map.
 ///
 /// Silently skips malformed lines and returns an empty map on IO error,
@@ -429,4 +381,47 @@ fn compute_elapsed(starttime: u64, ticks_per_second: u64) -> Duration {
         .map(|d| d.as_secs())
         .unwrap_or(start_secs);
     Duration::from_secs(now_secs.saturating_sub(start_secs))
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    /// Build a minimal process `Node` for unit tests.
+    pub fn make_test_node(pid: i32, name: &str) -> Node {
+        Node {
+            pid: Pid::new(pid),
+            name: name.to_owned(),
+            cmdline: String::new(),
+            user: String::new(),
+            state: 'S',
+            cpu_pct: Percent::new(0.0),
+            mem_rss_bytes: 0,
+            mem_pct: Percent::new(0.0),
+            io: IoRate::default(),
+            elapsed: Duration::ZERO,
+            cpu_time: Duration::ZERO,
+            parent_name: String::new(),
+            children: Vec::new(),
+            is_thread: false,
+        }
+    }
+
+    /// Build a minimal thread `Node` for unit tests.
+    pub fn make_test_thread(pid: i32, name: &str) -> Node {
+        Node {
+            is_thread: true,
+            ..make_test_node(pid, name)
+        }
+    }
+
+    /// Append a child to a `Node`.
+    pub fn push_child(parent: &mut Node, child: Node) {
+        parent.children.push(child);
+    }
+
+    /// Overwrite the `cmdline` field of a `Node`.
+    pub fn set_cmdline(node: &mut Node, cmdline: &str) {
+        node.cmdline = cmdline.to_owned();
+    }
 }
