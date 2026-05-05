@@ -27,6 +27,7 @@ use tokio::sync::watch;
 mod app;
 mod collector;
 mod format;
+mod picker;
 mod process;
 mod tree;
 mod ui;
@@ -49,8 +50,8 @@ fn styles() -> clap::builder::Styles {
 #[derive(Parser)]
 #[command(version, styles = styles())]
 struct Args {
-    /// PID to monitor
-    pid: i32,
+    /// PID to monitor; omit to launch the interactive process picker
+    pid: Option<i32>,
     /// Refresh interval in milliseconds
     #[arg(short, long, default_value = "1000", value_parser = parse_millis)]
     interval: Duration,
@@ -83,16 +84,21 @@ impl Drop for TerminalGuard {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    // Resolve the PID: use the CLI argument if provided, otherwise launch the
+    // interactive picker.  Return early (clean exit) if the user cancels.
+    let pid = match args.pid {
+        Some(raw) => process::Pid::new(raw),
+        None => match picker::pick()? {
+            Some(pid) => pid,
+            None => return Ok(()),
+        },
+    };
+
     let uid_map = Arc::new(process::load_uid_map());
     let mut app = app::App::new(args.threads);
 
     let (tx, mut rx) = watch::channel(None::<process::Node>);
-    tokio::spawn(collector::run(
-        process::Pid::new(args.pid),
-        args.interval,
-        uid_map,
-        tx,
-    ));
+    tokio::spawn(collector::run(pid, args.interval, uid_map, tx));
 
     // Block until the first snapshot arrives so the first TUI frame is populated.
     rx.changed()
@@ -100,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
         .context("process not found or collector failed before first sample")?;
     match rx.borrow_and_update().clone() {
         Some(root) => app.apply_snapshot(root),
-        None => anyhow::bail!("process {} exited before it could be sampled", args.pid),
+        None => anyhow::bail!("process {} exited before it could be sampled", pid),
     }
 
     terminal::enable_raw_mode()?;
