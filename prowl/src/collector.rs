@@ -1,11 +1,11 @@
 //! Background task that periodically reads the process tree and publishes
 //! snapshots over a `watch` channel.
 //!
-//! Owns all sampling state (previous CPU ticks, previous IO totals, timing)
+//! Owns all sampling state (previous CPU ticks, timing)
 //! so `App` stays limited to pure UI concerns.  Runs procfs I/O on a blocking
 //! thread via `spawn_blocking` to avoid stalling the async runtime.
 
-use crate::process::{IoRate, Pid, SystemConfig, Tree, collect_tree};
+use crate::process::{Pid, SystemConfig, Tree, collect_tree};
 use procfs::Current as _;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::{sync::watch, task, time};
@@ -16,7 +16,6 @@ use tokio::{sync::watch, task, time};
 /// `spawn_blocking` without separate take/restore operations per field.
 struct SamplingState {
     prev_ticks: HashMap<Pid, u64>,
-    prev_io: HashMap<Pid, IoRate>,
     prev_instant: Instant,
 }
 
@@ -24,7 +23,6 @@ impl SamplingState {
     fn new() -> Self {
         Self {
             prev_ticks: HashMap::new(),
-            prev_io: HashMap::new(),
             prev_instant: Instant::now(),
         }
     }
@@ -64,7 +62,6 @@ pub async fn run(
         // so each iteration has an up-to-date baseline.
         let mut moved_state = SamplingState {
             prev_ticks: std::mem::take(&mut state.prev_ticks),
-            prev_io: std::mem::take(&mut state.prev_io),
             prev_instant: state.prev_instant,
         };
 
@@ -72,7 +69,6 @@ pub async fn run(
             let result = collect_tree(
                 root_pid,
                 &mut moved_state.prev_ticks,
-                &mut moved_state.prev_io,
                 elapsed_secs,
                 &cfg,
                 &uid_map,
@@ -85,7 +81,6 @@ pub async fn run(
             Err(_panic) => break,
             Ok((result, returned_state)) => {
                 state.prev_ticks = returned_state.prev_ticks;
-                state.prev_io = returned_state.prev_io;
                 state.prev_instant = Instant::now();
 
                 match result {

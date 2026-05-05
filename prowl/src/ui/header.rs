@@ -8,7 +8,7 @@
 //!
 //! The CPU panel renders a tall multi-row braille graph (5 rows = 20 vertical
 //! levels) with a narrow label column showing the current percentage and the
-//! vertical "C P U" label.  The info panel shows status, IO rates, memory, and
+//! vertical "C P U" label.  The info panel shows status, IO totals, memory, and
 //! process metadata on separate lines.
 
 use crate::{
@@ -156,16 +156,8 @@ fn render_info_panel(
                 [
                     info_field("  ", "Status: ", format::state_word(root.state())),
                     info_field(" ", "Elapsed: ", format::format_duration(root.elapsed())),
-                    info_field(
-                        " ",
-                        "IO/R: ",
-                        format!("{}/s", format::format_bytes(root.io().read())),
-                    ),
-                    info_field(
-                        " ",
-                        "IO/W: ",
-                        format!("{}/s", format::format_bytes(root.io().write())),
-                    ),
+                    info_field(" ", "IO/R: ", format::format_bytes(root.io().read())),
+                    info_field(" ", "IO/W: ", format::format_bytes(root.io().write())),
                 ],
             ),
             2 => render_info_fields(

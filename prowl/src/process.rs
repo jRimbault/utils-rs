@@ -36,14 +36,14 @@ impl Pid {
     }
 }
 
-/// Bytes-per-second read and write rates for a process.
+/// Cumulative read and write bytes for a process.
 #[derive(Copy, Clone, Debug, Default)]
-pub struct IoRate {
+pub struct IoTotals {
     read: u64,
     write: u64,
 }
 
-impl IoRate {
+impl IoTotals {
     pub fn new(read: u64, write: u64) -> Self {
         Self { read, write }
     }
@@ -152,8 +152,8 @@ pub struct Node {
     cpu_pct: Percent,
     mem_rss_bytes: u64,
     mem_pct: Percent,
-    /// Bytes/sec read/write since the previous sample (0 on first sample or permission denied).
-    io: IoRate,
+    /// Cumulative read/write bytes from `/proc/<pid>/io` (0 on permission denied).
+    io: IoTotals,
     elapsed: Duration,
     /// Total CPU time consumed (utime + stime from `/proc/<pid>/stat`).
     cpu_time: Duration,
@@ -195,7 +195,7 @@ impl Node {
         self.mem_pct
     }
 
-    pub fn io(&self) -> IoRate {
+    pub fn io(&self) -> IoTotals {
         self.io
     }
 
@@ -287,7 +287,6 @@ pub fn load_uid_map() -> HashMap<u32, String> {
 pub fn collect_tree(
     root_pid: Pid,
     prev_ticks: &mut HashMap<Pid, u64>,
-    prev_io: &mut HashMap<Pid, IoRate>,
     elapsed_secs: f64,
     cfg: &SystemConfig,
     uid_map: &HashMap<u32, String>,
@@ -302,14 +301,12 @@ pub fn collect_tree(
         root_pid,
         &user,
         prev_ticks,
-        prev_io,
         elapsed_secs,
         cfg,
     )?)
     .chain(collect_child_processes(
         root_pid,
         prev_ticks,
-        prev_io,
         elapsed_secs,
         cfg,
         uid_map,
@@ -327,14 +324,12 @@ pub fn collect_tree(
 }
 
 /// Assemble a single process `Node` from procfs data and sampled metrics.
-#[allow(clippy::too_many_arguments)]
 fn build_node(
     proc: &Process,
     stat: &procfs::process::Stat,
     pid: Pid,
     user: &str,
     prev_ticks: &mut HashMap<Pid, u64>,
-    prev_io: &mut HashMap<Pid, IoRate>,
     elapsed_secs: f64,
     cfg: &SystemConfig,
 ) -> anyhow::Result<Node> {
@@ -349,7 +344,7 @@ fn build_node(
         cpu_pct,
         mem_rss_bytes,
         mem_pct,
-        io: sample_io(proc, pid, prev_io, elapsed_secs)?,
+        io: read_io_totals(proc)?,
         elapsed: compute_elapsed(stat.starttime, cfg.ticks_per_second()),
         cpu_time,
         parent_name: lookup_parent_name(stat.ppid),
@@ -396,36 +391,17 @@ fn compute_memory(stat: &procfs::process::Stat, cfg: &SystemConfig) -> (u64, Per
     (mem_rss_bytes, Percent::new(mem_pct))
 }
 
-/// Compute I/O bytes-per-second since the previous sample.
+/// Read cumulative I/O totals from `/proc/<pid>/io`.
 ///
 /// `/proc/<pid>/io` is only readable by the process owner or root;
 /// `PermissionDenied` gracefully falls back to zero rather than failing
 /// the entire tree collection.
-fn sample_io(
-    proc: &Process,
-    pid: Pid,
-    prev_io: &mut HashMap<Pid, IoRate>,
-    elapsed_secs: f64,
-) -> anyhow::Result<IoRate> {
-    let (io_read_raw, io_write_raw) = match proc.io() {
-        Ok(io) => (io.read_bytes, io.write_bytes),
-        Err(procfs::ProcError::PermissionDenied(_)) => (0, 0),
-        Err(e) => return Err(e.into()),
-    };
-    let rate = if let Some(prev) = prev_io.get(&pid) {
-        if elapsed_secs > 0.0 {
-            IoRate::new(
-                (io_read_raw.saturating_sub(prev.read()) as f64 / elapsed_secs) as u64,
-                (io_write_raw.saturating_sub(prev.write()) as f64 / elapsed_secs) as u64,
-            )
-        } else {
-            IoRate::default()
-        }
-    } else {
-        IoRate::default()
-    };
-    prev_io.insert(pid, IoRate::new(io_read_raw, io_write_raw));
-    Ok(rate)
+fn read_io_totals(proc: &Process) -> anyhow::Result<IoTotals> {
+    match proc.io() {
+        Ok(io) => Ok(IoTotals::new(io.read_bytes, io.write_bytes)),
+        Err(procfs::ProcError::PermissionDenied(_)) => Ok(IoTotals::default()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Map the process's effective UID to a username via the pre-loaded passwd map.
@@ -474,7 +450,6 @@ fn lookup_parent_name(ppid: i32) -> String {
 fn collect_child_processes(
     parent_pid: Pid,
     prev_ticks: &mut HashMap<Pid, u64>,
-    prev_io: &mut HashMap<Pid, IoRate>,
     elapsed_secs: f64,
     cfg: &SystemConfig,
     uid_map: &HashMap<u32, String>,
@@ -487,16 +462,9 @@ fn collect_child_processes(
                 .unwrap_or(false)
         })
         .filter_map(|p| {
-            collect_tree(
-                Pid::new(p.pid()),
-                prev_ticks,
-                prev_io,
-                elapsed_secs,
-                cfg,
-                uid_map,
-            )
-            .ok()
-            .and_then(|t| t.nodes.into_iter().next())
+            collect_tree(Pid::new(p.pid()), prev_ticks, elapsed_secs, cfg, uid_map)
+                .ok()
+                .and_then(|t| t.nodes.into_iter().next())
         })
         .collect())
 }
@@ -539,7 +507,7 @@ fn collect_threads(
                 cpu_pct,
                 mem_rss_bytes: tstat.rss * cfg.page_size(),
                 mem_pct: Percent::new(0.0),
-                io: IoRate::default(),
+                io: IoTotals::default(),
                 elapsed: Duration::ZERO,
                 cpu_time,
                 parent_name: stat.comm.clone(),
@@ -583,7 +551,7 @@ pub mod tests {
             cpu_pct: Percent::new(0.0),
             mem_rss_bytes: 0,
             mem_pct: Percent::new(0.0),
-            io: IoRate::default(),
+            io: IoTotals::default(),
             elapsed: Duration::ZERO,
             cpu_time: Duration::ZERO,
             parent_name: String::new(),
