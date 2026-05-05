@@ -218,6 +218,44 @@ impl Node {
     pub fn is_thread(&self) -> bool {
         self.is_thread
     }
+
+    /// Count all thread nodes contained in this subtree, excluding `self`.
+    pub fn thread_count(&self) -> usize {
+        self.children
+            .nodes
+            .iter()
+            .map(Node::thread_count_inclusive)
+            .sum()
+    }
+
+    /// Count all descendant process nodes in this subtree, excluding `self`.
+    pub fn subprocess_count(&self) -> usize {
+        self.children
+            .nodes
+            .iter()
+            .map(Node::subprocess_count_inclusive)
+            .sum()
+    }
+
+    fn thread_count_inclusive(&self) -> usize {
+        usize::from(self.is_thread)
+            + self
+                .children
+                .nodes
+                .iter()
+                .map(Node::thread_count_inclusive)
+                .sum::<usize>()
+    }
+
+    fn subprocess_count_inclusive(&self) -> usize {
+        usize::from(!self.is_thread)
+            + self
+                .children
+                .nodes
+                .iter()
+                .map(Node::subprocess_count_inclusive)
+                .sum::<usize>()
+    }
 }
 
 /// Parse `/etc/passwd` into a `uid → username` map.
@@ -530,6 +568,10 @@ fn compute_elapsed(starttime: u64, ticks_per_second: u64) -> Duration {
 pub mod tests {
     use super::*;
 
+    fn push_child(parent: &mut Node, child: Node) {
+        parent.children.nodes.push(child);
+    }
+
     /// Build a minimal process `Node` for unit tests.
     pub fn make_test_node(pid: i32, name: &str) -> Node {
         Node {
@@ -561,5 +603,19 @@ pub mod tests {
     /// Overwrite the `cmdline` field of a `Node`.
     pub fn set_cmdline(node: &mut Node, cmdline: &str) {
         node.cmdline = cmdline.to_owned();
+    }
+
+    #[test]
+    fn counts_threads_and_subprocesses_recursively() {
+        let mut root = make_test_node(1, "root");
+        let mut child = make_test_node(2, "child");
+
+        push_child(&mut child, make_test_node(3, "grandchild"));
+        push_child(&mut child, make_test_thread(11, "thread-b"));
+        push_child(&mut root, child);
+        push_child(&mut root, make_test_thread(10, "thread-a"));
+
+        assert_eq!(root.thread_count(), 2);
+        assert_eq!(root.subprocess_count(), 2);
     }
 }

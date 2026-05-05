@@ -9,7 +9,7 @@
 //! The CPU panel renders a tall multi-row braille graph (5 rows = 20 vertical
 //! levels) with a narrow label column showing the current percentage and the
 //! vertical "C P U" label.  The info panel shows status, IO rates, memory, and
-//! parent/user on separate lines.
+//! process metadata on separate lines.
 
 use crate::{
     app::{App, History},
@@ -134,7 +134,7 @@ fn render_cpu_panel(
     }
 }
 
-/// Render the right info panel: status/IO/memory/parent rows.
+/// Render the right info panel: status/IO/memory/process metadata rows.
 fn render_info_panel(
     frame: &mut Frame,
     area: Rect,
@@ -146,49 +146,39 @@ fn render_info_panel(
         return;
     }
 
-    // Row layout:
-    //   0 — blank (visual gap matching btop's right-panel padding)
-    //   1 — Status + Elapsed + IO/R + IO/W
-    //   2 — Parent + User
-    //   3 — Memory braille graph
-    //   4+ — blank
-    let static_rows: &[Option<Line>] = &[
-        Some(Line::raw("")),
-        Some(Line::from(vec![
-            Span::raw("  "),
-            label("Status: "),
-            value(&format!("{:<12}", format::state_word(root.state()))),
-            label("Elapsed: "),
-            value(&format!("{:<12}", format::format_duration(root.elapsed()))),
-            label("IO/R: "),
-            value(&format!("{}/s  ", format::format_bytes(root.io().read()))),
-            label("IO/W: "),
-            value(&format!("{}/s", format::format_bytes(root.io().write()))),
-        ])),
-        Some(Line::from(vec![
-            Span::raw("  "),
-            label("Parent: "),
-            value(&format!("{:<15}", root.parent_name())),
-            label("User: "),
-            value(root.user()),
-        ])),
-        None, // memory row — rendered via render_sparkline_row
-        Some(Line::from(vec![
-            Span::raw("  "),
-            label("CPU time: "),
-            value(&format::format_duration(root.cpu_time())),
-        ])),
-    ];
-
     for r in 0..h {
         let y = area.top() + r as u16;
         let row_rect = Rect::new(area.left(), y, area.width, 1);
-        match static_rows.get(r) {
-            Some(Some(line)) => {
-                frame.render_widget(Paragraph::new(line.clone()), row_rect);
-            }
-            Some(None) => {
-                // Memory graph row
+        match r {
+            1 => render_info_fields(
+                frame,
+                row_rect,
+                [
+                    info_field("  ", "Status: ", format::state_word(root.state())),
+                    info_field(" ", "Elapsed: ", format::format_duration(root.elapsed())),
+                    info_field(
+                        " ",
+                        "IO/R: ",
+                        format!("{}/s", format::format_bytes(root.io().read())),
+                    ),
+                    info_field(
+                        " ",
+                        "IO/W: ",
+                        format!("{}/s", format::format_bytes(root.io().write())),
+                    ),
+                ],
+            ),
+            2 => render_info_fields(
+                frame,
+                row_rect,
+                [
+                    info_field("  ", "Parent: ", root.parent_name()),
+                    info_field(" ", "User: ", root.user()),
+                    info_field(" ", "Threads: ", root.thread_count().to_string()),
+                    info_field(" ", "Subproc: ", root.subprocess_count().to_string()),
+                ],
+            ),
+            3 => {
                 render_sparkline_row(
                     frame,
                     row_rect,
@@ -198,9 +188,43 @@ fn render_info_panel(
                     &format!("  {}", format::format_bytes(root.mem_rss_bytes())),
                 );
             }
-            None => {} // rows beyond the defined content: leave blank
+            4 => {
+                frame.render_widget(
+                    Paragraph::new(Line::from(vec![
+                        Span::raw("  "),
+                        label("CPU time: "),
+                        value(&format::format_duration(root.cpu_time())),
+                    ])),
+                    row_rect,
+                );
+            }
+            _ => {}
         }
     }
+}
+
+fn render_info_fields(frame: &mut Frame, area: Rect, fields: [Line<'static>; 4]) {
+    let [col1, col2, col3, col4] = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Fill(1),
+        Constraint::Fill(1),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
+    let [field1, field2, field3, field4] = fields;
+
+    frame.render_widget(Paragraph::new(field1), col1);
+    frame.render_widget(Paragraph::new(field2), col2);
+    frame.render_widget(Paragraph::new(field3), col3);
+    frame.render_widget(Paragraph::new(field4), col4);
+}
+
+fn info_field(prefix: &str, name: &str, contents: impl Into<String>) -> Line<'static> {
+    Line::from(vec![
+        Span::raw(prefix.to_owned()),
+        label(name),
+        value(&contents.into()),
+    ])
 }
 
 /// Render a 1-row braille graph between a left label and a right label.
