@@ -37,7 +37,7 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             Block::bordered()
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(Color::DarkGray))
-                .title(Span::styled(title, Style::new().fg(Color::Cyan).bold())),
+                .title(Span::styled(title, Style::new().fg(Color::White).bold())),
             area,
         );
         return;
@@ -49,7 +49,7 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::new().fg(Color::DarkGray))
         .title(Span::styled(
             format!(" {} ", root.name()),
-            Style::new().fg(Color::Cyan).bold(),
+            Style::new().fg(Color::White).bold(),
         ));
 
     let inner = block.inner(area);
