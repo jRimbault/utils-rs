@@ -31,9 +31,23 @@ mod process;
 mod tree;
 mod ui;
 
+fn styles() -> clap::builder::Styles {
+    use clap::builder::styling::{AnsiColor, Style};
+    clap::builder::Styles::styled()
+        .header(
+            Style::new()
+                .fg_color(Some(AnsiColor::Yellow.into()))
+                .bold()
+                .underline(),
+        )
+        .usage(Style::new().fg_color(Some(AnsiColor::Yellow.into())).bold())
+        .literal(AnsiColor::Green.on_default())
+        .placeholder(AnsiColor::Cyan.on_default())
+}
+
 /// Monitor a PID and its subprocess tree in a TUI.
 #[derive(Parser)]
-#[command(version)]
+#[command(version, styles = styles())]
 struct Args {
     /// PID to monitor
     pid: i32,
