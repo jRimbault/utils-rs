@@ -244,15 +244,8 @@ pub fn load_uid_map() -> HashMap<u32, String> {
 /// Collect the process tree rooted at `root_pid`.
 ///
 /// Threads are always collected so the UI can toggle their visibility without
-/// waiting for the next refresh cycle.
-///
-/// CPU% is computed as the fraction of one second consumed by this process
-/// since the last sample.  `prev_ticks` is updated in-place so the next
-/// call can compute a fresh delta.
-///
-/// `/proc/<pid>/io` is readable only by the process owner or root; on
-/// `PermissionDenied` the IO fields fall back to 0.  All other errors
-/// from procfs are propagated.
+/// waiting for the next refresh cycle.  The returned `Tree` owns the full
+/// hierarchy: root node first, child processes and threads as its children.
 pub fn collect_tree(
     root_pid: Pid,
     prev_ticks: &mut HashMap<Pid, u64>,
@@ -263,33 +256,125 @@ pub fn collect_tree(
 ) -> anyhow::Result<Tree> {
     let proc = Process::new(root_pid.get())?;
     let stat = proc.stat()?;
+    let user = resolve_user(&proc, uid_map);
 
+    Ok(std::iter::once(build_node(
+        &proc,
+        &stat,
+        root_pid,
+        &user,
+        prev_ticks,
+        prev_io,
+        elapsed_secs,
+        cfg,
+    )?)
+    .chain(collect_child_processes(
+        root_pid,
+        prev_ticks,
+        prev_io,
+        elapsed_secs,
+        cfg,
+        uid_map,
+    )?)
+    .chain(collect_threads(
+        &proc,
+        root_pid,
+        &user,
+        &stat,
+        prev_ticks,
+        elapsed_secs,
+        cfg,
+    ))
+    .collect())
+}
+
+/// Assemble a single process `Node` from procfs data and sampled metrics.
+#[allow(clippy::too_many_arguments)]
+fn build_node(
+    proc: &Process,
+    stat: &procfs::process::Stat,
+    pid: Pid,
+    user: &str,
+    prev_ticks: &mut HashMap<Pid, u64>,
+    prev_io: &mut HashMap<Pid, IoRate>,
+    elapsed_secs: f64,
+    cfg: &SystemConfig,
+) -> anyhow::Result<Node> {
+    let (cpu_pct, cpu_time) = sample_cpu(pid, stat, prev_ticks, elapsed_secs, cfg);
+    let (mem_rss_bytes, mem_pct) = compute_memory(stat, cfg);
+    Ok(Node {
+        pid,
+        name: stat.comm.clone(),
+        cmdline: read_cmdline(proc, stat),
+        user: user.to_owned(),
+        state: stat.state,
+        cpu_pct,
+        mem_rss_bytes,
+        mem_pct,
+        io: sample_io(proc, pid, prev_io, elapsed_secs)?,
+        elapsed: compute_elapsed(stat.starttime, cfg.ticks_per_second()),
+        cpu_time,
+        parent_name: lookup_parent_name(stat.ppid),
+        children: Tree::default(),
+        is_thread: false,
+    })
+}
+
+/// Compute CPU utilisation since the last sample.
+///
+/// Returns the per-second CPU% and the total accumulated CPU time (utime +
+/// stime).  `prev_ticks` is updated in-place so the next call can compute
+/// a fresh delta.
+fn sample_cpu(
+    pid: Pid,
+    stat: &procfs::process::Stat,
+    prev_ticks: &mut HashMap<Pid, u64>,
+    elapsed_secs: f64,
+    cfg: &SystemConfig,
+) -> (Percent, Duration) {
     let current_ticks = stat.utime + stat.stime;
-    let delta = current_ticks.saturating_sub(*prev_ticks.get(&root_pid).unwrap_or(&current_ticks));
+    let delta = current_ticks.saturating_sub(*prev_ticks.get(&pid).unwrap_or(&current_ticks));
     let cpu_pct = if elapsed_secs > 0.0 {
         (delta as f64 / cfg.ticks_per_second() as f64) / elapsed_secs * 100.0
     } else {
         0.0
     };
-    prev_ticks.insert(root_pid, current_ticks);
-    // Total CPU time (user + system) accumulated by this process.
+    prev_ticks.insert(pid, current_ticks);
     let cpu_time = Duration::from_secs_f64(current_ticks as f64 / cfg.ticks_per_second() as f64);
+    (Percent::new(cpu_pct), cpu_time)
+}
 
-    // stat.rss is in pages; convert to bytes then to a percentage of total RAM.
+/// Derive resident memory in bytes and as a percentage of total RAM.
+///
+/// `stat.rss` is measured in pages; we multiply by the page size once here
+/// so downstream code never needs to know the page size.
+fn compute_memory(stat: &procfs::process::Stat, cfg: &SystemConfig) -> (u64, Percent) {
     let mem_rss_bytes = stat.rss * cfg.page_size();
     let mem_pct = if cfg.mem_total_bytes() > 0 {
         mem_rss_bytes as f64 / cfg.mem_total_bytes() as f64 * 100.0
     } else {
         0.0
     };
+    (mem_rss_bytes, Percent::new(mem_pct))
+}
 
-    // /proc/<pid>/io is only readable by the owning user or root.
+/// Compute I/O bytes-per-second since the previous sample.
+///
+/// `/proc/<pid>/io` is only readable by the process owner or root;
+/// `PermissionDenied` gracefully falls back to zero rather than failing
+/// the entire tree collection.
+fn sample_io(
+    proc: &Process,
+    pid: Pid,
+    prev_io: &mut HashMap<Pid, IoRate>,
+    elapsed_secs: f64,
+) -> anyhow::Result<IoRate> {
     let (io_read_raw, io_write_raw) = match proc.io() {
         Ok(io) => (io.read_bytes, io.write_bytes),
         Err(procfs::ProcError::PermissionDenied(_)) => (0, 0),
         Err(e) => return Err(e.into()),
     };
-    let io = if let Some(prev) = prev_io.get(&root_pid) {
+    let rate = if let Some(prev) = prev_io.get(&pid) {
         if elapsed_secs > 0.0 {
             IoRate::new(
                 (io_read_raw.saturating_sub(prev.read()) as f64 / elapsed_secs) as u64,
@@ -301,10 +386,16 @@ pub fn collect_tree(
     } else {
         IoRate::default()
     };
-    prev_io.insert(root_pid, IoRate::new(io_read_raw, io_write_raw));
+    prev_io.insert(pid, IoRate::new(io_read_raw, io_write_raw));
+    Ok(rate)
+}
 
-    let user = proc
-        .status()
+/// Map the process's effective UID to a username via the pre-loaded passwd map.
+///
+/// Falls back to the numeric UID string if the username is unknown, or to
+/// an empty string if `/proc/<pid>/status` is unreadable.
+fn resolve_user(proc: &Process, uid_map: &HashMap<u32, String>) -> String {
+    proc.status()
         .ok()
         .map(|s| {
             uid_map
@@ -312,26 +403,51 @@ pub fn collect_tree(
                 .cloned()
                 .unwrap_or_else(|| s.euid.to_string())
         })
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
 
-    // boot_time() uses chrono::Local in procfs 0.18.
-    let elapsed = compute_elapsed(stat.starttime, cfg.ticks_per_second());
-
-    let parent_name = Process::new(stat.ppid)
-        .and_then(|p| p.stat())
-        .map(|s| s.comm)
-        .unwrap_or_default();
-
-    let cmdline = proc
-        .cmdline()
+/// Read the full command line (argv joined by spaces).
+///
+/// Kernel threads and processes whose `/proc/<pid>/cmdline` is empty fall
+/// back to the short `comm` name from stat.
+fn read_cmdline(proc: &Process, stat: &procfs::process::Stat) -> String {
+    proc.cmdline()
         .ok()
         .filter(|v| !v.is_empty())
         .map(|v| v.join(" "))
-        .unwrap_or_else(|| stat.comm.clone());
+        .unwrap_or_else(|| stat.comm.clone())
+}
 
-    let children: Vec<Node> = all_processes()?
+/// Look up the parent process's short name for display context.
+///
+/// Returns an empty string if the parent has already exited.
+fn lookup_parent_name(ppid: i32) -> String {
+    Process::new(ppid)
+        .and_then(|p| p.stat())
+        .map(|s| s.comm)
+        .unwrap_or_default()
+}
+
+/// Recursively collect direct child processes of `parent_pid`.
+///
+/// Enumerates all processes via `/proc` and filters to those whose ppid
+/// matches.  Each child is itself collected as a full sub-tree.  Processes
+/// that vanish mid-collection are silently skipped.
+fn collect_child_processes(
+    parent_pid: Pid,
+    prev_ticks: &mut HashMap<Pid, u64>,
+    prev_io: &mut HashMap<Pid, IoRate>,
+    elapsed_secs: f64,
+    cfg: &SystemConfig,
+    uid_map: &HashMap<u32, String>,
+) -> anyhow::Result<Vec<Node>> {
+    Ok(all_processes()?
         .filter_map(|r| r.ok())
-        .filter(|p| p.stat().map(|s| s.ppid == root_pid.get()).unwrap_or(false))
+        .filter(|p| {
+            p.stat()
+                .map(|s| s.ppid == parent_pid.get())
+                .unwrap_or(false)
+        })
         .filter_map(|p| {
             collect_tree(
                 Pid::new(p.pid()),
@@ -344,50 +460,50 @@ pub fn collect_tree(
             .ok()
             .and_then(|t| t.nodes.into_iter().next())
         })
-        .collect();
+        .collect())
+}
 
-    let thread_nodes: Vec<Node> = proc
-        .tasks()
+/// Collect the threads (tasks) belonging to a process.
+///
+/// Each thread is represented as a leaf `Node` with `is_thread = true`.
+/// The main thread (tid == pid) is excluded since it is the process itself.
+/// Thread names are read from `/proc/<pid>/task/<tid>/comm` which provides
+/// the full name without the 15-character truncation of `stat.comm`.
+fn collect_threads(
+    proc: &Process,
+    pid: Pid,
+    user: &str,
+    stat: &procfs::process::Stat,
+    prev_ticks: &mut HashMap<Pid, u64>,
+    elapsed_secs: f64,
+    cfg: &SystemConfig,
+) -> Vec<Node> {
+    proc.tasks()
         .map(|tasks| {
             tasks
                 .filter_map(|r| r.ok())
-                .filter(|t| t.tid != root_pid.get())
+                .filter(|t| t.tid != pid.get())
                 .filter_map(|task| {
                     let tstat = task.stat().ok()?;
-                    let thread_ticks = tstat.utime + tstat.stime;
                     let tid = Pid::new(task.tid);
-                    let thread_delta =
-                        thread_ticks.saturating_sub(*prev_ticks.get(&tid).unwrap_or(&thread_ticks));
-                    let thread_cpu = if elapsed_secs > 0.0 {
-                        (thread_delta as f64 / cfg.ticks_per_second() as f64) / elapsed_secs * 100.0
-                    } else {
-                        0.0
-                    };
-                    prev_ticks.insert(tid, thread_ticks);
-                    let thread_cpu_time = Duration::from_secs_f64(
-                        thread_ticks as f64 / cfg.ticks_per_second() as f64,
-                    );
-                    // /proc/<pid>/task/<tid>/comm gives the full thread name
-                    // without the 15-char truncation of stat.comm.
-                    let thread_name = fs::read_to_string(format!(
-                        "/proc/{}/task/{}/comm",
-                        root_pid.get(),
-                        task.tid
-                    ))
-                    .map(|s| s.trim_end().to_owned())
-                    .unwrap_or_else(|_| tstat.comm.clone());
+                    let (cpu_pct, cpu_time) =
+                        sample_cpu(tid, &tstat, prev_ticks, elapsed_secs, cfg);
+                    let thread_name =
+                        fs::read_to_string(format!("/proc/{}/task/{}/comm", pid.get(), task.tid))
+                            .map(|s| s.trim_end().to_owned())
+                            .unwrap_or_else(|_| tstat.comm.clone());
                     Some(Node {
                         pid: tid,
                         name: thread_name.clone(),
                         cmdline: thread_name,
-                        user: user.clone(),
+                        user: user.to_owned(),
                         state: tstat.state,
-                        cpu_pct: Percent::new(thread_cpu),
+                        cpu_pct,
                         mem_rss_bytes: tstat.rss * cfg.page_size(),
                         mem_pct: Percent::new(0.0),
                         io: IoRate::default(),
                         elapsed: Duration::ZERO,
-                        cpu_time: thread_cpu_time,
+                        cpu_time,
                         parent_name: stat.comm.clone(),
                         children: Tree::default(),
                         is_thread: true,
@@ -395,28 +511,7 @@ pub fn collect_tree(
                 })
                 .collect()
         })
-        .unwrap_or_default();
-
-    // Build the tree: root node first, then children and threads.
-    Ok(std::iter::once(Node {
-        pid: root_pid,
-        name: stat.comm,
-        cmdline,
-        user,
-        state: stat.state,
-        cpu_pct: Percent::new(cpu_pct),
-        mem_rss_bytes,
-        mem_pct: Percent::new(mem_pct),
-        io,
-        elapsed,
-        cpu_time,
-        parent_name,
-        children: Tree::default(),
-        is_thread: false,
-    })
-    .chain(children)
-    .chain(thread_nodes)
-    .collect())
+        .unwrap_or_default()
 }
 
 /// Compute how long the process has been running.
