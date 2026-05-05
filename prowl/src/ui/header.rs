@@ -181,13 +181,19 @@ fn render_info_panel(
                 );
             }
             4 => {
-                frame.render_widget(
-                    Paragraph::new(Line::from(vec![
-                        Span::raw("  "),
-                        label("CPU time: "),
-                        value(&format::format_duration(root.cpu_time())),
-                    ])),
+                render_info_fields(
+                    frame,
                     row_rect,
+                    [
+                        info_field("  ", "CPU time: ", format::format_duration(root.cpu_time())),
+                        info_field(
+                            " ",
+                            "Sub CPU: ",
+                            format::format_duration(root.subprocess_cpu_time()),
+                        ),
+                        Line::raw(""),
+                        Line::raw(""),
+                    ],
                 );
             }
             _ => {}

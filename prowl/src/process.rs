@@ -237,6 +237,16 @@ impl Node {
             .sum()
     }
 
+    /// Sum CPU time across all descendant process nodes, excluding `self`.
+    pub fn subprocess_cpu_time(&self) -> Duration {
+        self.children
+            .nodes
+            .iter()
+            .fold(Duration::ZERO, |acc, node| {
+                acc.saturating_add(node.subprocess_cpu_time_inclusive())
+            })
+    }
+
     fn thread_count_inclusive(&self) -> usize {
         usize::from(self.is_thread)
             + self
@@ -255,6 +265,17 @@ impl Node {
                 .iter()
                 .map(Node::subprocess_count_inclusive)
                 .sum::<usize>()
+    }
+
+    fn subprocess_cpu_time_inclusive(&self) -> Duration {
+        let own = if self.is_thread {
+            Duration::ZERO
+        } else {
+            self.cpu_time
+        };
+        self.children.nodes.iter().fold(own, |acc, node| {
+            acc.saturating_add(node.subprocess_cpu_time_inclusive())
+        })
     }
 }
 
@@ -333,7 +354,7 @@ fn build_node(
     elapsed_secs: f64,
     cfg: &SystemConfig,
 ) -> anyhow::Result<Node> {
-    let (cpu_pct, cpu_time) = sample_cpu(pid, stat, prev_ticks, elapsed_secs, cfg);
+    let (cpu_pct, cpu_time) = sample_task_cpu(pid, stat, prev_ticks, elapsed_secs, cfg);
     let (mem_rss_bytes, mem_pct) = compute_memory(stat, cfg);
     Ok(Node {
         pid,
@@ -353,19 +374,28 @@ fn build_node(
     })
 }
 
-/// Compute CPU utilisation since the last sample.
+/// Compute CPU utilisation since the last sample for a single task.
 ///
 /// Returns the per-second CPU% and the total accumulated CPU time (utime +
 /// stime).  `prev_ticks` is updated in-place so the next call can compute
 /// a fresh delta.
-fn sample_cpu(
+fn sample_task_cpu(
     pid: Pid,
     stat: &procfs::process::Stat,
     prev_ticks: &mut HashMap<Pid, u64>,
     elapsed_secs: f64,
     cfg: &SystemConfig,
 ) -> (Percent, Duration) {
-    let current_ticks = stat.utime + stat.stime;
+    sample_ticks(pid, stat.utime + stat.stime, prev_ticks, elapsed_secs, cfg)
+}
+
+fn sample_ticks(
+    pid: Pid,
+    current_ticks: u64,
+    prev_ticks: &mut HashMap<Pid, u64>,
+    elapsed_secs: f64,
+    cfg: &SystemConfig,
+) -> (Percent, Duration) {
     let delta = current_ticks.saturating_sub(*prev_ticks.get(&pid).unwrap_or(&current_ticks));
     let cpu_pct = if elapsed_secs > 0.0 {
         (delta as f64 / cfg.ticks_per_second() as f64) / elapsed_secs * 100.0
@@ -493,7 +523,7 @@ fn collect_threads(
         .filter_map(|task| {
             let tstat = task.stat().ok()?;
             let tid = Pid::new(task.tid);
-            let (cpu_pct, cpu_time) = sample_cpu(tid, &tstat, prev_ticks, elapsed_secs, cfg);
+            let (cpu_pct, cpu_time) = sample_task_cpu(tid, &tstat, prev_ticks, elapsed_secs, cfg);
             let thread_name =
                 fs::read_to_string(format!("/proc/{}/task/{}/comm", pid.get(), task.tid))
                     .map(|s| s.trim_end().to_owned())
@@ -573,6 +603,11 @@ pub mod tests {
         node.cmdline = cmdline.to_owned();
     }
 
+    /// Overwrite the `cpu_time` field of a `Node`.
+    pub fn set_cpu_time(node: &mut Node, cpu_time: Duration) {
+        node.cpu_time = cpu_time;
+    }
+
     #[test]
     fn counts_threads_and_subprocesses_recursively() {
         let mut root = make_test_node(1, "root");
@@ -585,5 +620,24 @@ pub mod tests {
 
         assert_eq!(root.thread_count(), 2);
         assert_eq!(root.subprocess_count(), 2);
+    }
+
+    #[test]
+    fn sums_subprocess_cpu_time_recursively_excluding_threads() {
+        let mut root = make_test_node(1, "root");
+        let mut child = make_test_node(2, "child");
+        let mut grandchild = make_test_node(3, "grandchild");
+        let mut thread = make_test_thread(10, "thread");
+
+        set_cpu_time(&mut root, Duration::from_secs(5));
+        set_cpu_time(&mut child, Duration::from_secs(7));
+        set_cpu_time(&mut grandchild, Duration::from_secs(11));
+        set_cpu_time(&mut thread, Duration::from_secs(13));
+
+        push_child(&mut child, grandchild);
+        push_child(&mut root, child);
+        push_child(&mut root, thread);
+
+        assert_eq!(root.subprocess_cpu_time(), Duration::from_secs(18));
     }
 }
