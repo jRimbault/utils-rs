@@ -1,7 +1,7 @@
 //! Tree-table widget — htop-style columnar view of the process tree.
 //!
-//! Renders the flattened `FlatRow` list from `App` as a ratatui `Table` with
-//! colour-coded CPU and memory bars.  The function mutates `app.visible_rows`
+//! Renders the flattened `tree::Row` list from `App` as a ratatui `Table` with
+//! colour-coded CPU and memory bars.  The function calls `app.set_visible_rows`
 //! so that `App::sync_scroll` can keep the selection visible on the next tick.
 //!
 //! At narrow terminal widths, lower-priority columns are progressively hidden
@@ -112,7 +112,7 @@ impl ColumnSet {
 
 pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
     // Subtract 3 for top border + column header row + bottom border.
-    app.visible_rows = (area.height as usize).saturating_sub(3);
+    app.set_visible_rows((area.height as usize).saturating_sub(3));
 
     // Inner width minus left/right borders.
     let inner_width = area.width.saturating_sub(2);
@@ -163,51 +163,55 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let header = Row::new(header_cells).style(Style::new().fg(Color::White));
 
+    let selected = app.selected();
     let rows: Vec<Row> = app
-        .flat_rows
+        .flat_rows()
         .iter()
         .enumerate()
         .map(|(i, fr)| {
-            let is_selected = i == app.selected;
-            let cpu_color = format::intensity_color(fr.cpu_pct);
-            let mem_color = format::intensity_color(fr.mem_pct);
+            let is_selected = i == selected;
+            let cpu_color = fr.cpu_pct().color();
+            let mem_color = fr.mem_pct().color();
 
-            let collapse_marker = if fr.has_children {
-                if fr.is_collapsed { "▸ " } else { "▾ " }
+            let collapse_marker = if fr.has_children() {
+                if fr.is_collapsed() { "▸ " } else { "▾ " }
             } else {
                 ""
             };
-            let cmd = format!("{}{}{}", fr.connector, collapse_marker, fr.cmdline);
+            let cmd = format!("{}{}{}", fr.connector(), collapse_marker, fr.cmdline());
 
             let base_style = if is_selected {
                 Style::new()
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD)
-            } else if fr.is_thread {
+            } else if fr.is_thread() {
                 Style::new().add_modifier(Modifier::DIM)
             } else {
                 Style::new()
             };
 
-            let is_thread = fr.is_thread;
-            let mut cells: Vec<Cell> = vec![Cell::new(format!("{:>7}", fr.pid))];
+            let is_thread = fr.is_thread();
+            let mut cells: Vec<Cell> = vec![Cell::new(format!("{:>7}", fr.pid()))];
 
             if cols.user {
                 cells.push(Cell::new(if is_thread {
                     String::new()
                 } else {
-                    format!("{:<8}", fr.user)
+                    format!("{:<8}", fr.user())
                 }));
             }
             if cols.state_full {
-                cells.push(Cell::new(format!(" {:<9}", format::state_word(fr.state))));
+                cells.push(Cell::new(format!(" {:<9}", format::state_word(fr.state()))));
             } else {
-                cells.push(Cell::new(format!(" {} ", fr.state)));
+                cells.push(Cell::new(format!(" {} ", fr.state())));
             }
-            cells.push(Cell::new(format!("{:>4.1}", fr.cpu_pct)).style(Style::new().fg(cpu_color)));
+            cells.push(
+                Cell::new(format!("{:>4.1}", fr.cpu_pct().value()))
+                    .style(Style::new().fg(cpu_color)),
+            );
             if cols.cpu_bar {
                 cells.push(
-                    Cell::new(format::bar(fr.cpu_pct / 100.0, 8)).style(Style::new().fg(cpu_color)),
+                    Cell::new(format::bar(fr.cpu_pct(), 8)).style(Style::new().fg(cpu_color)),
                 );
             }
             if cols.mem_pct {
@@ -215,7 +219,7 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
                     Cell::new(if is_thread {
                         String::new()
                     } else {
-                        format!("{:>4.1}", fr.mem_pct)
+                        format!("{:>4.1}", fr.mem_pct().value())
                     })
                     .style(Style::new().fg(mem_color)),
                 );
@@ -225,7 +229,7 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
                     Cell::new(if is_thread {
                         String::new()
                     } else {
-                        format::bar(fr.mem_pct / 100.0, 8)
+                        format::bar(fr.mem_pct(), 8)
                     })
                     .style(Style::new().fg(mem_color)),
                 );
@@ -234,20 +238,20 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
                 cells.push(Cell::new(if is_thread {
                     String::new()
                 } else {
-                    format!("{:>7}", format::format_bytes(fr.mem_rss_bytes))
+                    format!("{:>7}", format::format_bytes(fr.mem_rss_bytes()))
                 }));
             }
             if cols.elapsed {
                 cells.push(Cell::new(if is_thread {
                     String::new()
                 } else {
-                    format!("{:>8}", format::format_duration(fr.elapsed))
+                    format!("{:>8}", format::format_duration(fr.elapsed()))
                 }));
             }
             if cols.cpu_time {
                 cells.push(Cell::new(format!(
                     "{:>8}",
-                    format::format_duration(fr.cpu_time)
+                    format::format_duration(fr.cpu_time())
                 )));
             }
             cells.push(Cell::new(cmd));
@@ -279,5 +283,5 @@ pub fn render_tree(frame: &mut Frame, app: &mut App, area: Rect) {
         .row_highlight_style(Style::new().bg(Color::DarkGray).bold())
         .column_spacing(1);
 
-    frame.render_stateful_widget(table, area, &mut app.table_state);
+    frame.render_stateful_widget(table, area, app.table_state_mut());
 }

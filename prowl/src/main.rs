@@ -4,6 +4,7 @@
 //!
 //! * `format`    — pure, stateless formatting utilities
 //! * `process`   — procfs I/O; produces plain data structs
+//! * `tree`      — pure flatten logic; `Row` type for the table widget
 //! * `collector` — async task that owns sampling state and publishes via `watch`
 //! * `app`       — UI state: selection, scroll, display preferences
 //! * `ui`        — pure rendering: reads `App`, writes to the terminal frame
@@ -27,6 +28,7 @@ mod app;
 mod collector;
 mod format;
 mod process;
+mod tree;
 mod ui;
 
 /// Monitor a PID and its subprocess tree in a TUI.
@@ -70,8 +72,13 @@ async fn main() -> anyhow::Result<()> {
     let uid_map = Arc::new(process::load_uid_map());
     let mut app = app::App::new(args.threads);
 
-    let (tx, mut rx) = watch::channel(None::<process::ProcessNode>);
-    tokio::spawn(collector::run(args.pid, args.interval, uid_map, tx));
+    let (tx, mut rx) = watch::channel(None::<process::Node>);
+    tokio::spawn(collector::run(
+        process::Pid::new(args.pid),
+        args.interval,
+        uid_map,
+        tx,
+    ));
 
     // Block until the first snapshot arrives so the first TUI frame is populated.
     rx.changed()
@@ -124,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
 
         terminal.draw(|frame| ui::render(frame, &mut app))?;
 
-        if app.exited {
+        if app.exited() {
             tokio::time::sleep(Duration::from_secs(2)).await;
             break;
         }

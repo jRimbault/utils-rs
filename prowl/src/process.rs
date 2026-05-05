@@ -7,60 +7,215 @@
 
 use std::{
     collections::HashMap,
-    fs,
+    fmt, fs,
     time::{Duration, UNIX_EPOCH},
 };
 
 use procfs::process::{Process, all_processes};
 
-/// Full process/thread node in the tree.
-#[derive(Clone)]
-pub struct ProcessNode {
-    pub pid: i32,
-    pub name: String,
-    pub cmdline: String,
-    pub user: String,
-    pub state: char,
-    pub cpu_pct: f64,
-    pub mem_rss_bytes: u64,
-    pub mem_pct: f64,
-    /// Bytes/sec read since the previous sample (0 on first sample or permission denied).
-    pub io_read_rate: u64,
-    /// Bytes/sec written since the previous sample.
-    pub io_write_rate: u64,
-    pub elapsed: Duration,
-    /// Total CPU time consumed (utime + stime from `/proc/<pid>/stat`).
-    pub cpu_time: Duration,
-    pub parent_name: String,
-    pub children: Vec<ProcessNode>,
-    pub is_thread: bool,
+use crate::format::Percent;
+
+/// Newtype wrapping a Linux process/thread ID.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Pid(i32);
+
+impl fmt::Display for Pid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
 }
 
-/// Flattened row used by the tree-table widget.
+impl Pid {
+    pub fn new(pid: i32) -> Self {
+        Self(pid)
+    }
+
+    /// Return the raw `i32` value.
+    pub fn get(self) -> i32 {
+        self.0
+    }
+}
+
+/// Bytes-per-second read and write rates for a process.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct IoRate {
+    read: u64,
+    write: u64,
+}
+
+impl IoRate {
+    pub fn new(read: u64, write: u64) -> Self {
+        Self { read, write }
+    }
+
+    pub fn read(self) -> u64 {
+        self.read
+    }
+
+    pub fn write(self) -> u64 {
+        self.write
+    }
+}
+
+/// System-level constants needed for CPU/memory percentage calculations.
 ///
-/// `connector` contains the full Unicode-art prefix produced by `flatten`,
-/// e.g. `"│  ├─ "`.
+/// Collected once at startup and passed through the sampling call chain
+/// so callers don't have to remember unit conversions.
+#[derive(Copy, Clone, Debug)]
+pub struct SystemConfig {
+    ticks_per_second: u64,
+    page_size: u64,
+    /// Total physical RAM in bytes (already multiplied from kilobytes at construction).
+    mem_total_bytes: u64,
+}
+
+impl SystemConfig {
+    pub fn new(ticks_per_second: u64, page_size: u64, mem_total_bytes: u64) -> Self {
+        Self {
+            ticks_per_second,
+            page_size,
+            mem_total_bytes,
+        }
+    }
+
+    pub fn ticks_per_second(self) -> u64 {
+        self.ticks_per_second
+    }
+
+    pub fn page_size(self) -> u64 {
+        self.page_size
+    }
+
+    pub fn mem_total_bytes(self) -> u64 {
+        self.mem_total_bytes
+    }
+}
+
+/// Full process/thread node in the tree.
 #[derive(Clone)]
-pub struct FlatRow {
-    pub pid: i32,
-    /// Full tree-art prefix + connector glyph, ready to prepend to `cmdline`.
-    pub connector: String,
-    /// Full command line (argv joined by spaces); falls back to `stat.comm` for threads
-    /// and kernel workers where `/proc/<pid>/cmdline` is empty.
-    pub cmdline: String,
-    pub user: String,
-    pub state: char,
-    pub cpu_pct: f64,
-    pub mem_pct: f64,
-    pub mem_rss_bytes: u64,
-    pub elapsed: Duration,
+pub struct Node {
+    pid: Pid,
+    name: String,
+    cmdline: String,
+    user: String,
+    state: char,
+    cpu_pct: Percent,
+    mem_rss_bytes: u64,
+    mem_pct: Percent,
+    /// Bytes/sec read/write since the previous sample (0 on first sample or permission denied).
+    io: IoRate,
+    elapsed: Duration,
     /// Total CPU time consumed (utime + stime from `/proc/<pid>/stat`).
-    pub cpu_time: Duration,
-    pub is_thread: bool,
-    /// Whether this node has visible children (used for collapse indicator).
-    pub has_children: bool,
-    /// Whether this node's subtree is currently collapsed.
-    pub is_collapsed: bool,
+    cpu_time: Duration,
+    parent_name: String,
+    children: Vec<Node>,
+    is_thread: bool,
+}
+
+impl Node {
+    pub fn pid(&self) -> Pid {
+        self.pid
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn cmdline(&self) -> &str {
+        &self.cmdline
+    }
+
+    pub fn user(&self) -> &str {
+        &self.user
+    }
+
+    pub fn state(&self) -> char {
+        self.state
+    }
+
+    pub fn cpu_pct(&self) -> Percent {
+        self.cpu_pct
+    }
+
+    pub fn mem_rss_bytes(&self) -> u64 {
+        self.mem_rss_bytes
+    }
+
+    pub fn mem_pct(&self) -> Percent {
+        self.mem_pct
+    }
+
+    pub fn io(&self) -> IoRate {
+        self.io
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        self.elapsed
+    }
+
+    pub fn cpu_time(&self) -> Duration {
+        self.cpu_time
+    }
+
+    pub fn parent_name(&self) -> &str {
+        &self.parent_name
+    }
+
+    pub fn children(&self) -> &[Node] {
+        &self.children
+    }
+
+    pub fn is_thread(&self) -> bool {
+        self.is_thread
+    }
+}
+
+// --- Test helpers ---
+//
+// These functions are `pub` so that the `tree` module's tests can build
+// `Node` values without requiring a public constructor.  They are only
+// compiled in `#[cfg(test)]` contexts to keep them out of production code.
+
+/// Build a minimal process `Node` for unit tests.
+#[cfg(test)]
+pub fn make_test_node(pid: i32, name: &str) -> Node {
+    Node {
+        pid: Pid::new(pid),
+        name: name.to_owned(),
+        cmdline: String::new(),
+        user: String::new(),
+        state: 'S',
+        cpu_pct: Percent::new(0.0),
+        mem_rss_bytes: 0,
+        mem_pct: Percent::new(0.0),
+        io: IoRate::default(),
+        elapsed: Duration::ZERO,
+        cpu_time: Duration::ZERO,
+        parent_name: String::new(),
+        children: Vec::new(),
+        is_thread: false,
+    }
+}
+
+/// Build a minimal thread `Node` for unit tests.
+#[cfg(test)]
+pub fn make_test_thread(pid: i32, name: &str) -> Node {
+    Node {
+        is_thread: true,
+        ..make_test_node(pid, name)
+    }
+}
+
+/// Append a child to a `Node`; used only in tests.
+#[cfg(test)]
+pub fn push_child(parent: &mut Node, child: Node) {
+    parent.children.push(child);
+}
+
+/// Overwrite the `cmdline` field of a `Node`; used only in tests.
+#[cfg(test)]
+pub fn set_cmdline(node: &mut Node, cmdline: &str) {
+    node.cmdline = cmdline.to_owned();
 }
 
 /// Parse `/etc/passwd` into a `uid → username` map.
@@ -98,34 +253,31 @@ pub fn load_uid_map() -> HashMap<u32, String> {
 /// from procfs are propagated.
 #[allow(clippy::too_many_arguments)]
 pub fn collect_tree(
-    root_pid: i32,
-    prev_ticks: &mut HashMap<i32, u64>,
-    prev_io: &mut HashMap<i32, (u64, u64)>,
+    root_pid: Pid,
+    prev_ticks: &mut HashMap<Pid, u64>,
+    prev_io: &mut HashMap<Pid, IoRate>,
     elapsed_secs: f64,
-    ticks_per_second: u64,
-    page_size: u64,
-    mem_total_kb: u64,
+    cfg: &SystemConfig,
     uid_map: &HashMap<u32, String>,
-) -> anyhow::Result<ProcessNode> {
-    let proc = Process::new(root_pid)?;
+) -> anyhow::Result<Node> {
+    let proc = Process::new(root_pid.get())?;
     let stat = proc.stat()?;
 
     let current_ticks = stat.utime + stat.stime;
     let delta = current_ticks.saturating_sub(*prev_ticks.get(&root_pid).unwrap_or(&current_ticks));
     let cpu_pct = if elapsed_secs > 0.0 {
-        (delta as f64 / ticks_per_second as f64) / elapsed_secs * 100.0
+        (delta as f64 / cfg.ticks_per_second() as f64) / elapsed_secs * 100.0
     } else {
         0.0
     };
     prev_ticks.insert(root_pid, current_ticks);
     // Total CPU time (user + system) accumulated by this process.
-    let cpu_time = Duration::from_secs_f64(current_ticks as f64 / ticks_per_second as f64);
+    let cpu_time = Duration::from_secs_f64(current_ticks as f64 / cfg.ticks_per_second() as f64);
 
     // stat.rss is in pages; convert to bytes then to a percentage of total RAM.
-    let mem_rss_bytes = stat.rss * page_size;
-    let mem_total_bytes = mem_total_kb * 1024;
-    let mem_pct = if mem_total_bytes > 0 {
-        mem_rss_bytes as f64 / mem_total_bytes as f64 * 100.0
+    let mem_rss_bytes = stat.rss * cfg.page_size();
+    let mem_pct = if cfg.mem_total_bytes() > 0 {
+        mem_rss_bytes as f64 / cfg.mem_total_bytes() as f64 * 100.0
     } else {
         0.0
     };
@@ -136,20 +288,19 @@ pub fn collect_tree(
         Err(procfs::ProcError::PermissionDenied(_)) => (0, 0),
         Err(e) => return Err(e.into()),
     };
-    let (io_read_rate, io_write_rate) =
-        if let Some(&(prev_read, prev_write)) = prev_io.get(&root_pid) {
-            if elapsed_secs > 0.0 {
-                (
-                    (io_read_raw.saturating_sub(prev_read) as f64 / elapsed_secs) as u64,
-                    (io_write_raw.saturating_sub(prev_write) as f64 / elapsed_secs) as u64,
-                )
-            } else {
-                (0, 0)
-            }
+    let io = if let Some(prev) = prev_io.get(&root_pid) {
+        if elapsed_secs > 0.0 {
+            IoRate::new(
+                (io_read_raw.saturating_sub(prev.read()) as f64 / elapsed_secs) as u64,
+                (io_write_raw.saturating_sub(prev.write()) as f64 / elapsed_secs) as u64,
+            )
         } else {
-            (0, 0)
-        };
-    prev_io.insert(root_pid, (io_read_raw, io_write_raw));
+            IoRate::default()
+        }
+    } else {
+        IoRate::default()
+    };
+    prev_io.insert(root_pid, IoRate::new(io_read_raw, io_write_raw));
 
     let user = proc
         .status()
@@ -163,7 +314,7 @@ pub fn collect_tree(
         .unwrap_or_default();
 
     // boot_time() uses chrono::Local in procfs 0.18.
-    let elapsed = compute_elapsed(stat.starttime, ticks_per_second);
+    let elapsed = compute_elapsed(stat.starttime, cfg.ticks_per_second());
 
     let parent_name = Process::new(stat.ppid)
         .and_then(|p| p.stat())
@@ -177,60 +328,62 @@ pub fn collect_tree(
         .map(|v| v.join(" "))
         .unwrap_or_else(|| stat.comm.clone());
 
-    let children: Vec<ProcessNode> = all_processes()?
+    let children: Vec<Node> = all_processes()?
         .filter_map(|r| r.ok())
-        .filter(|p| p.stat().map(|s| s.ppid == root_pid).unwrap_or(false))
+        .filter(|p| p.stat().map(|s| s.ppid == root_pid.get()).unwrap_or(false))
         .filter_map(|p| {
             collect_tree(
-                p.pid(),
+                Pid::new(p.pid()),
                 prev_ticks,
                 prev_io,
                 elapsed_secs,
-                ticks_per_second,
-                page_size,
-                mem_total_kb,
+                cfg,
                 uid_map,
             )
             .ok()
         })
         .collect();
 
-    let thread_nodes: Vec<ProcessNode> = proc
+    let thread_nodes: Vec<Node> = proc
         .tasks()
         .map(|tasks| {
             tasks
                 .filter_map(|r| r.ok())
-                .filter(|t| t.tid != root_pid)
+                .filter(|t| t.tid != root_pid.get())
                 .filter_map(|task| {
                     let tstat = task.stat().ok()?;
                     let thread_ticks = tstat.utime + tstat.stime;
-                    let thread_delta = thread_ticks
-                        .saturating_sub(*prev_ticks.get(&task.tid).unwrap_or(&thread_ticks));
+                    let tid = Pid::new(task.tid);
+                    let thread_delta =
+                        thread_ticks.saturating_sub(*prev_ticks.get(&tid).unwrap_or(&thread_ticks));
                     let thread_cpu = if elapsed_secs > 0.0 {
-                        (thread_delta as f64 / ticks_per_second as f64) / elapsed_secs * 100.0
+                        (thread_delta as f64 / cfg.ticks_per_second() as f64) / elapsed_secs * 100.0
                     } else {
                         0.0
                     };
-                    prev_ticks.insert(task.tid, thread_ticks);
-                    let thread_cpu_time =
-                        Duration::from_secs_f64(thread_ticks as f64 / ticks_per_second as f64);
+                    prev_ticks.insert(tid, thread_ticks);
+                    let thread_cpu_time = Duration::from_secs_f64(
+                        thread_ticks as f64 / cfg.ticks_per_second() as f64,
+                    );
                     // /proc/<pid>/task/<tid>/comm gives the full thread name
                     // without the 15-char truncation of stat.comm.
-                    let thread_name =
-                        fs::read_to_string(format!("/proc/{root_pid}/task/{}/comm", task.tid))
-                            .map(|s| s.trim_end().to_owned())
-                            .unwrap_or_else(|_| tstat.comm.clone());
-                    Some(ProcessNode {
-                        pid: task.tid,
+                    let thread_name = fs::read_to_string(format!(
+                        "/proc/{}/task/{}/comm",
+                        root_pid.get(),
+                        task.tid
+                    ))
+                    .map(|s| s.trim_end().to_owned())
+                    .unwrap_or_else(|_| tstat.comm.clone());
+                    Some(Node {
+                        pid: tid,
                         name: thread_name.clone(),
                         cmdline: thread_name,
                         user: user.clone(),
                         state: tstat.state,
-                        cpu_pct: thread_cpu,
-                        mem_rss_bytes: tstat.rss * page_size,
-                        mem_pct: 0.0,
-                        io_read_rate: 0,
-                        io_write_rate: 0,
+                        cpu_pct: Percent::new(thread_cpu),
+                        mem_rss_bytes: tstat.rss * cfg.page_size(),
+                        mem_pct: Percent::new(0.0),
+                        io: IoRate::default(),
                         elapsed: Duration::ZERO,
                         cpu_time: thread_cpu_time,
                         parent_name: stat.comm.clone(),
@@ -246,17 +399,16 @@ pub fn collect_tree(
     let mut all_children = children;
     all_children.extend(thread_nodes);
 
-    Ok(ProcessNode {
+    Ok(Node {
         pid: root_pid,
         name: stat.comm,
         cmdline,
         user,
         state: stat.state,
-        cpu_pct,
+        cpu_pct: Percent::new(cpu_pct),
         mem_rss_bytes,
-        mem_pct,
-        io_read_rate,
-        io_write_rate,
+        mem_pct: Percent::new(mem_pct),
+        io,
         elapsed,
         cpu_time,
         parent_name,
@@ -277,218 +429,4 @@ fn compute_elapsed(starttime: u64, ticks_per_second: u64) -> Duration {
         .map(|d| d.as_secs())
         .unwrap_or(start_secs);
     Duration::from_secs(now_secs.saturating_sub(start_secs))
-}
-
-/// Flatten a `ProcessNode` tree into an ordered list of `FlatRow`s.
-///
-/// The connector strings use Unicode box-drawing characters (├─, └─, │)
-/// to reproduce an htop-style tree appearance in a columnar table.
-pub fn flatten(
-    root: &ProcessNode,
-    show_threads: bool,
-    collapsed: &std::collections::HashSet<i32>,
-) -> Vec<FlatRow> {
-    let ctx = FlattenCtx {
-        root_name: &root.name,
-        show_threads,
-        collapsed,
-    };
-    let mut out = Vec::new();
-    flatten_node(root, &ctx, "", true, true, &mut out);
-    out
-}
-
-/// Static context shared across all recursive calls to `flatten_node`.
-struct FlattenCtx<'a> {
-    root_name: &'a str,
-    show_threads: bool,
-    collapsed: &'a std::collections::HashSet<i32>,
-}
-
-/// Recursive helper that carries the accumulated indentation prefix.
-fn flatten_node(
-    node: &ProcessNode,
-    ctx: &FlattenCtx<'_>,
-    prefix: &str,
-    is_root: bool,
-    is_last: bool,
-    out: &mut Vec<FlatRow>,
-) {
-    // Root node gets no connector; subsequent nodes get tree-art glyphs.
-    let connector = if is_root {
-        String::new()
-    } else if is_last {
-        format!("{prefix}└─ ")
-    } else {
-        format!("{prefix}├─ ")
-    };
-
-    // Root shows full cmdline; child processes strip argv[0] since the binary
-    // is already implied by the tree context; threads show their kernel name.
-    let cmdline = if is_root {
-        if node.cmdline.is_empty() {
-            node.name.clone()
-        } else {
-            node.cmdline.clone()
-        }
-    } else if node.is_thread {
-        node.name.clone()
-    } else if node.name == ctx.root_name {
-        // Same binary as the root — strip argv[0] and show just the arguments.
-        match node.cmdline.find(' ') {
-            Some(pos) => node.cmdline[pos + 1..].to_owned(),
-            None => node.name.clone(),
-        }
-    } else {
-        // Different binary — show the full cmdline.
-        if node.cmdline.is_empty() {
-            node.name.clone()
-        } else {
-            node.cmdline.clone()
-        }
-    };
-
-    let visible_children: Vec<_> = node
-        .children
-        .iter()
-        .filter(|c| ctx.show_threads || !c.is_thread)
-        .collect();
-    let is_collapsed = ctx.collapsed.contains(&node.pid);
-
-    out.push(FlatRow {
-        connector,
-        pid: node.pid,
-        cmdline,
-        user: node.user.clone(),
-        state: node.state,
-        cpu_pct: node.cpu_pct,
-        mem_pct: node.mem_pct,
-        mem_rss_bytes: node.mem_rss_bytes,
-        elapsed: node.elapsed,
-        cpu_time: node.cpu_time,
-        is_thread: node.is_thread,
-        has_children: !visible_children.is_empty(),
-        is_collapsed,
-    });
-
-    // Skip children when this node is collapsed.
-    if is_collapsed {
-        return;
-    }
-
-    // The child prefix extends the current prefix by one "column" worth of
-    // indentation.  If the current node is not the last sibling we draw a
-    // vertical bar; otherwise we draw spaces so the tree closes cleanly.
-    let child_prefix = if is_root {
-        String::new()
-    } else {
-        format!("{prefix}{}", if is_last { "   " } else { "│  " })
-    };
-
-    let n = visible_children.len();
-    for (i, child) in visible_children.iter().enumerate() {
-        flatten_node(child, ctx, &child_prefix, false, i == n - 1, out);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashSet;
-
-    fn make_node(pid: i32, name: &str) -> ProcessNode {
-        ProcessNode {
-            pid,
-            name: name.to_owned(),
-            cmdline: String::new(),
-            user: String::new(),
-            state: 'S',
-            cpu_pct: 0.0,
-            mem_rss_bytes: 0,
-            mem_pct: 0.0,
-            io_read_rate: 0,
-            io_write_rate: 0,
-            elapsed: Duration::ZERO,
-            cpu_time: Duration::ZERO,
-            parent_name: String::new(),
-            children: Vec::new(),
-            is_thread: false,
-        }
-    }
-
-    #[test]
-    fn flatten_single_node() {
-        let root = make_node(1, "root");
-        let no_collapsed = HashSet::new();
-        let rows = flatten(&root, false, &no_collapsed);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].connector, "");
-        assert_eq!(rows[0].pid, 1);
-    }
-
-    #[test]
-    fn flatten_two_children_connectors() {
-        let mut root = make_node(1, "root");
-        root.children.push(make_node(2, "child1"));
-        root.children.push(make_node(3, "child2"));
-        let no_collapsed = HashSet::new();
-        let rows = flatten(&root, false, &no_collapsed);
-        assert_eq!(rows.len(), 3);
-        // First child is not last → ├─
-        assert_eq!(rows[1].connector, "├─ ");
-        // Second child is last → └─
-        assert_eq!(rows[2].connector, "└─ ");
-    }
-
-    #[test]
-    fn flatten_thread_hidden_by_default() {
-        let mut root = make_node(1, "root");
-        let mut thread = make_node(10, "thread");
-        thread.is_thread = true;
-        root.children.push(thread);
-        let no_collapsed = HashSet::new();
-        let rows = flatten(&root, false, &no_collapsed);
-        assert_eq!(rows.len(), 1, "thread should be hidden");
-    }
-
-    #[test]
-    fn flatten_thread_shown_when_requested() {
-        let mut root = make_node(1, "root");
-        let mut thread = make_node(10, "thread");
-        thread.is_thread = true;
-        root.children.push(thread);
-        let no_collapsed = HashSet::new();
-        let rows = flatten(&root, true, &no_collapsed);
-        assert_eq!(rows.len(), 2, "thread should appear");
-        assert!(rows[1].is_thread);
-    }
-
-    #[test]
-    fn flatten_collapsed_hides_children() {
-        let mut root = make_node(1, "root");
-        root.children.push(make_node(2, "child1"));
-        root.children.push(make_node(3, "child2"));
-        let collapsed = HashSet::from([1]);
-        let rows = flatten(&root, false, &collapsed);
-        assert_eq!(
-            rows.len(),
-            1,
-            "children should be hidden when root is collapsed"
-        );
-        assert!(rows[0].is_collapsed);
-    }
-
-    #[test]
-    fn flatten_collapsed_subtree() {
-        let mut root = make_node(1, "root");
-        let mut child = make_node(2, "child");
-        child.children.push(make_node(3, "grandchild"));
-        root.children.push(child);
-        // Collapse child (pid 2), not root.
-        let collapsed = HashSet::from([2]);
-        let rows = flatten(&root, false, &collapsed);
-        assert_eq!(rows.len(), 2, "grandchild should be hidden");
-        assert!(!rows[0].is_collapsed);
-        assert!(rows[1].is_collapsed);
-    }
 }

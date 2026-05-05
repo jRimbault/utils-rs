@@ -5,57 +5,88 @@
 //! so `App` stays limited to pure UI concerns.  Runs procfs I/O on a blocking
 //! thread via `spawn_blocking` to avoid stalling the async runtime.
 
-use crate::process::{ProcessNode, collect_tree};
+use crate::process::{IoRate, Node, Pid, SystemConfig, collect_tree};
 use procfs::Current as _;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::{sync::watch, task, time};
 
+/// Mutable per-iteration state threaded through the sampling loop.
+///
+/// Bundled into a single struct so it can be moved atomically in and out of
+/// `spawn_blocking` without separate take/restore operations per field.
+struct SamplingState {
+    prev_ticks: HashMap<Pid, u64>,
+    prev_io: HashMap<Pid, IoRate>,
+    prev_instant: Instant,
+}
+
+impl SamplingState {
+    fn new() -> Self {
+        Self {
+            prev_ticks: HashMap::new(),
+            prev_io: HashMap::new(),
+            prev_instant: Instant::now(),
+        }
+    }
+
+    fn elapsed_secs(&self) -> f64 {
+        self.prev_instant.elapsed().as_secs_f64()
+    }
+}
+
 pub async fn run(
-    root_pid: i32,
+    root_pid: Pid,
     interval: std::time::Duration,
     uid_map: Arc<HashMap<u32, String>>,
-    tx: watch::Sender<Option<ProcessNode>>,
+    tx: watch::Sender<Option<Node>>,
 ) {
-    let ticks_per_second = procfs::ticks_per_second();
-    let page_size = procfs::page_size();
-    let mut prev_ticks: HashMap<i32, u64> = HashMap::new();
-    let mut prev_io: HashMap<i32, (u64, u64)> = HashMap::new();
-    let mut prev_instant = Instant::now();
+    // mem_total_kb from Meminfo is in KiB; multiply once here so collect_tree
+    // receives bytes and never needs to know the original unit.
+    let mem_total_bytes = procfs::Meminfo::current()
+        .map(|m| m.mem_total * 1024)
+        .unwrap_or(1);
+    let cfg = SystemConfig::new(
+        procfs::ticks_per_second(),
+        procfs::page_size(),
+        mem_total_bytes,
+    );
+
+    let mut state = SamplingState::new();
     let mut ticker = time::interval(interval);
     ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     loop {
         ticker.tick().await;
 
-        let elapsed_secs = prev_instant.elapsed().as_secs_f64();
+        let elapsed_secs = state.elapsed_secs();
         let uid_map = Arc::clone(&uid_map);
         // Move sampling state into the blocking closure; recover it on completion
         // so each iteration has an up-to-date baseline.
-        let mut ticks = std::mem::take(&mut prev_ticks);
-        let mut io = std::mem::take(&mut prev_io);
+        let mut moved_state = SamplingState {
+            prev_ticks: std::mem::take(&mut state.prev_ticks),
+            prev_io: std::mem::take(&mut state.prev_io),
+            prev_instant: state.prev_instant,
+        };
 
         let outcome = task::spawn_blocking(move || {
-            let mem_total_kb = procfs::Meminfo::current().map(|m| m.mem_total).unwrap_or(1);
             let result = collect_tree(
                 root_pid,
-                &mut ticks,
-                &mut io,
+                &mut moved_state.prev_ticks,
+                &mut moved_state.prev_io,
                 elapsed_secs,
-                ticks_per_second,
-                page_size,
-                mem_total_kb,
+                &cfg,
                 &uid_map,
             );
-            (result, ticks, io)
+            (result, moved_state)
         })
         .await;
 
         match outcome {
             Err(_panic) => break,
-            Ok((result, returned_ticks, returned_io)) => {
-                prev_ticks = returned_ticks;
-                prev_io = returned_io;
-                prev_instant = Instant::now();
+            Ok((result, returned_state)) => {
+                state.prev_ticks = returned_state.prev_ticks;
+                state.prev_io = returned_state.prev_io;
+                state.prev_instant = Instant::now();
 
                 match result {
                     Ok(node) => {
