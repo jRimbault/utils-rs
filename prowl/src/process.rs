@@ -91,6 +91,56 @@ impl SystemConfig {
     }
 }
 
+/// A process tree rooted at a single `Node`.
+///
+/// Implements `FromIterator<Node>`: the first yielded node becomes the root,
+/// all subsequent nodes are appended as its direct children.  This lets
+/// callers build a tree by collecting from any iterator (channels, worker
+/// tasks, test arrays, etc.).
+#[derive(Clone, Default)]
+pub struct Tree {
+    nodes: Vec<Node>,
+}
+
+impl Tree {
+    /// The root node, if the tree is non-empty.
+    pub fn root(&self) -> Option<&Node> {
+        self.nodes.first()
+    }
+
+    /// Consume the tree and return the root node, if non-empty.
+    #[cfg(test)]
+    pub fn into_root(self) -> Option<Node> {
+        self.nodes.into_iter().next()
+    }
+}
+
+impl From<Node> for Tree {
+    fn from(node: Node) -> Self {
+        Self {
+            nodes: Vec::from([node]),
+        }
+    }
+}
+
+/// Build a tree: first node = root, remaining nodes = its direct children.
+impl std::iter::FromIterator<Node> for Tree {
+    fn from_iter<I: IntoIterator<Item = Node>>(iter: I) -> Self {
+        let mut iter = iter.into_iter();
+        let Some(mut root) = iter.next() else {
+            return Self::default();
+        };
+        std::iter::Extend::extend(&mut root.children, iter);
+        Self::from(root)
+    }
+}
+
+impl std::iter::Extend<Node> for Tree {
+    fn extend<I: IntoIterator<Item = Node>>(&mut self, iter: I) {
+        self.nodes.extend(iter);
+    }
+}
+
 /// Full process/thread node in the tree.
 #[derive(Clone)]
 pub struct Node {
@@ -108,7 +158,7 @@ pub struct Node {
     /// Total CPU time consumed (utime + stime from `/proc/<pid>/stat`).
     cpu_time: Duration,
     parent_name: String,
-    children: Vec<Node>,
+    children: Tree,
     is_thread: bool,
 }
 
@@ -162,7 +212,7 @@ impl Node {
     }
 
     pub fn children(&self) -> &[Node] {
-        &self.children
+        &self.children.nodes
     }
 
     pub fn is_thread(&self) -> bool {
@@ -203,7 +253,6 @@ pub fn load_uid_map() -> HashMap<u32, String> {
 /// `/proc/<pid>/io` is readable only by the process owner or root; on
 /// `PermissionDenied` the IO fields fall back to 0.  All other errors
 /// from procfs are propagated.
-#[allow(clippy::too_many_arguments)]
 pub fn collect_tree(
     root_pid: Pid,
     prev_ticks: &mut HashMap<Pid, u64>,
@@ -211,7 +260,7 @@ pub fn collect_tree(
     elapsed_secs: f64,
     cfg: &SystemConfig,
     uid_map: &HashMap<u32, String>,
-) -> anyhow::Result<Node> {
+) -> anyhow::Result<Tree> {
     let proc = Process::new(root_pid.get())?;
     let stat = proc.stat()?;
 
@@ -293,6 +342,7 @@ pub fn collect_tree(
                 uid_map,
             )
             .ok()
+            .and_then(|t| t.nodes.into_iter().next())
         })
         .collect();
 
@@ -339,7 +389,7 @@ pub fn collect_tree(
                         elapsed: Duration::ZERO,
                         cpu_time: thread_cpu_time,
                         parent_name: stat.comm.clone(),
-                        children: Vec::new(),
+                        children: Tree::default(),
                         is_thread: true,
                     })
                 })
@@ -347,11 +397,8 @@ pub fn collect_tree(
         })
         .unwrap_or_default();
 
-    // Merge threads into children so the tree structure is uniform.
-    let mut all_children = children;
-    all_children.extend(thread_nodes);
-
-    Ok(Node {
+    // Build the tree: root node first, then children and threads.
+    Ok(std::iter::once(Node {
         pid: root_pid,
         name: stat.comm,
         cmdline,
@@ -364,9 +411,12 @@ pub fn collect_tree(
         elapsed,
         cpu_time,
         parent_name,
-        children: all_children,
+        children: Tree::default(),
         is_thread: false,
     })
+    .chain(children)
+    .chain(thread_nodes)
+    .collect())
 }
 
 /// Compute how long the process has been running.
@@ -402,7 +452,7 @@ pub mod tests {
             elapsed: Duration::ZERO,
             cpu_time: Duration::ZERO,
             parent_name: String::new(),
-            children: Vec::new(),
+            children: Tree::default(),
             is_thread: false,
         }
     }
@@ -413,11 +463,6 @@ pub mod tests {
             is_thread: true,
             ..make_test_node(pid, name)
         }
-    }
-
-    /// Append a child to a `Node`.
-    pub fn push_child(parent: &mut Node, child: Node) {
-        parent.children.push(child);
     }
 
     /// Overwrite the `cmdline` field of a `Node`.

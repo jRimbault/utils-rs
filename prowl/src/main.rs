@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
     let uid_map = Arc::new(process::load_uid_map());
     let mut app = app::App::new(args.threads);
 
-    let (tx, mut rx) = watch::channel(None::<process::Node>);
+    let (tx, mut rx) = watch::channel(None::<process::Tree>);
     tokio::spawn(collector::run(pid, args.interval, uid_map, tx));
 
     // Block until the first snapshot arrives so the first TUI frame is populated.
@@ -105,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("process not found or collector failed before first sample")?;
     match rx.borrow_and_update().clone() {
-        Some(root) => app.apply_snapshot(root),
+        Some(tree) => app.apply_snapshot(tree),
         None => anyhow::bail!("process {} exited before it could be sampled", pid),
     }
 
@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
                 // `Err` means the sender was dropped (collector finished or process gone).
                 match result {
                     Ok(()) => match rx.borrow_and_update().clone() {
-                        Some(root) => app.apply_snapshot(root),
+                        Some(tree) => app.apply_snapshot(tree),
                         None => app.mark_exited(),
                     },
                     Err(_) => app.mark_exited(),

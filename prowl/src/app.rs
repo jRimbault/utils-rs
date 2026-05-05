@@ -8,7 +8,7 @@ use std::collections::{HashSet, VecDeque};
 
 use crate::{
     format::Percent,
-    process::{Node, Pid},
+    process::{Node, Pid, Tree},
     tree::{Row, flatten},
 };
 
@@ -53,7 +53,7 @@ impl History {
 }
 
 pub struct App {
-    root: Option<Node>,
+    root: Option<Tree>,
     /// Name of the observed root process; displayed in the header title.
     name: String,
     flat_rows: Vec<Row>,
@@ -94,7 +94,7 @@ impl App {
     // --- Read accessors ---
 
     pub fn root(&self) -> Option<&Node> {
-        self.root.as_ref()
+        self.root.as_ref().and_then(|t| t.root())
     }
 
     pub fn name(&self) -> &str {
@@ -143,15 +143,16 @@ impl App {
     // --- State mutation methods ---
 
     /// Replace the current snapshot with a freshly collected one.
-    pub fn apply_snapshot(&mut self, root: Node) {
+    pub fn apply_snapshot(&mut self, tree: Tree) {
+        let Some(root) = tree.root() else { return };
         self.name = root.name().to_owned();
         self.cpu_history.push(root.cpu_pct());
         self.mem_history.push(root.mem_pct());
-        self.flat_rows = flatten(&root, self.show_threads, &self.collapsed);
+        self.flat_rows = flatten(&tree, self.show_threads, &self.collapsed);
         if !self.flat_rows.is_empty() && self.selected >= self.flat_rows.len() {
             self.selected = self.flat_rows.len() - 1;
         }
-        self.root = Some(root);
+        self.root = Some(tree);
         self.sync_scroll();
     }
 
@@ -174,8 +175,8 @@ impl App {
     /// Toggle thread visibility using the already-cached snapshot — no refresh needed.
     pub fn toggle_threads(&mut self) {
         self.show_threads = !self.show_threads;
-        if let Some(root) = &self.root {
-            self.flat_rows = flatten(root, self.show_threads, &self.collapsed);
+        if let Some(tree) = &self.root {
+            self.flat_rows = flatten(tree, self.show_threads, &self.collapsed);
         }
         if !self.flat_rows.is_empty() && self.selected >= self.flat_rows.len() {
             self.selected = self.flat_rows.len() - 1;
@@ -190,8 +191,8 @@ impl App {
             if !self.collapsed.remove(&pid) {
                 self.collapsed.insert(pid);
             }
-            if let Some(root) = &self.root {
-                self.flat_rows = flatten(root, self.show_threads, &self.collapsed);
+            if let Some(tree) = &self.root {
+                self.flat_rows = flatten(tree, self.show_threads, &self.collapsed);
             }
             if !self.flat_rows.is_empty() && self.selected >= self.flat_rows.len() {
                 self.selected = self.flat_rows.len() - 1;

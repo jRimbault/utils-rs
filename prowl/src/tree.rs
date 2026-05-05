@@ -89,15 +89,18 @@ impl Row {
     }
 }
 
-/// Flatten a `process::Node` tree into an ordered list of `Row`s.
+/// Flatten a `Tree` into an ordered list of `Row`s.
 ///
 /// The connector strings use Unicode box-drawing characters (├─, └─, │)
 /// to reproduce an htop-style tree appearance in a columnar table.
 pub fn flatten(
-    root: &crate::process::Node,
+    tree: &crate::process::Tree,
     show_threads: bool,
     collapsed: &HashSet<Pid>,
 ) -> Vec<Row> {
+    let Some(root) = tree.root() else {
+        return Vec::new();
+    };
     let ctx = FlattenCtx {
         root_name: root.name(),
         show_threads,
@@ -210,11 +213,14 @@ fn flatten_node(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::tests::{make_test_node, make_test_thread, push_child, set_cmdline};
+    use crate::process::{
+        Tree,
+        tests::{make_test_node, make_test_thread, set_cmdline},
+    };
 
     #[test]
     fn flatten_single_node() {
-        let root = make_test_node(1, "root");
+        let root: Tree = [make_test_node(1, "root")].into_iter().collect();
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 1);
@@ -224,9 +230,13 @@ mod tests {
 
     #[test]
     fn flatten_two_children_connectors() {
-        let mut root = make_test_node(1, "root");
-        push_child(&mut root, make_test_node(2, "child1"));
-        push_child(&mut root, make_test_node(3, "child2"));
+        let root: Tree = [
+            make_test_node(1, "root"),
+            make_test_node(2, "child1"),
+            make_test_node(3, "child2"),
+        ]
+        .into_iter()
+        .collect();
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 3);
@@ -238,9 +248,9 @@ mod tests {
 
     #[test]
     fn flatten_thread_hidden_by_default() {
-        let mut root = make_test_node(1, "root");
-        let thread = make_test_thread(10, "thread");
-        push_child(&mut root, thread);
+        let root: Tree = [make_test_node(1, "root"), make_test_thread(10, "thread")]
+            .into_iter()
+            .collect();
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, false, &no_collapsed);
         assert_eq!(rows.len(), 1, "thread should be hidden");
@@ -248,9 +258,9 @@ mod tests {
 
     #[test]
     fn flatten_thread_shown_when_requested() {
-        let mut root = make_test_node(1, "root");
-        let thread = make_test_thread(10, "thread");
-        push_child(&mut root, thread);
+        let root: Tree = [make_test_node(1, "root"), make_test_thread(10, "thread")]
+            .into_iter()
+            .collect();
         let no_collapsed = HashSet::new();
         let rows = flatten(&root, true, &no_collapsed);
         assert_eq!(rows.len(), 2, "thread should appear");
@@ -259,9 +269,13 @@ mod tests {
 
     #[test]
     fn flatten_collapsed_hides_children() {
-        let mut root = make_test_node(1, "root");
-        push_child(&mut root, make_test_node(2, "child1"));
-        push_child(&mut root, make_test_node(3, "child2"));
+        let root: Tree = [
+            make_test_node(1, "root"),
+            make_test_node(2, "child1"),
+            make_test_node(3, "child2"),
+        ]
+        .into_iter()
+        .collect();
         let collapsed = HashSet::from([Pid::new(1)]);
         let rows = flatten(&root, false, &collapsed);
         assert_eq!(
@@ -274,10 +288,11 @@ mod tests {
 
     #[test]
     fn flatten_collapsed_subtree() {
-        let mut root = make_test_node(1, "root");
-        let mut child = make_test_node(2, "child");
-        push_child(&mut child, make_test_node(3, "grandchild"));
-        push_child(&mut root, child);
+        let grandchild: Tree = [make_test_node(2, "child"), make_test_node(3, "grandchild")]
+            .into_iter()
+            .collect();
+        let child = grandchild.into_root().unwrap();
+        let root: Tree = [make_test_node(1, "root"), child].into_iter().collect();
         // Collapse child (pid 2), not root.
         let collapsed = HashSet::from([Pid::new(2)]);
         let rows = flatten(&root, false, &collapsed);

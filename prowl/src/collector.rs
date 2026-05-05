@@ -5,7 +5,7 @@
 //! so `App` stays limited to pure UI concerns.  Runs procfs I/O on a blocking
 //! thread via `spawn_blocking` to avoid stalling the async runtime.
 
-use crate::process::{IoRate, Node, Pid, SystemConfig, collect_tree};
+use crate::process::{IoRate, Pid, SystemConfig, Tree, collect_tree};
 use procfs::Current as _;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::{sync::watch, task, time};
@@ -38,7 +38,7 @@ pub async fn run(
     root_pid: Pid,
     interval: std::time::Duration,
     uid_map: Arc<HashMap<u32, String>>,
-    tx: watch::Sender<Option<Node>>,
+    tx: watch::Sender<Option<Tree>>,
 ) {
     // mem_total_kb from Meminfo is in KiB; multiply once here so collect_tree
     // receives bytes and never needs to know the original unit.
@@ -89,8 +89,8 @@ pub async fn run(
                 state.prev_instant = Instant::now();
 
                 match result {
-                    Ok(node) => {
-                        if tx.send(Some(node)).is_err() {
+                    Ok(tree) => {
+                        if tx.send(Some(tree)).is_err() {
                             break;
                         }
                     }
