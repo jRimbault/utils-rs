@@ -1395,6 +1395,7 @@ dependencies = [
  "console",
  "git2",
  "jiff",
+ "semver",
  "tempfile",
 ]
 

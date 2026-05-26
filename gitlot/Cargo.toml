@@ -9,6 +9,7 @@ clap = { version = "4.6.1", features = ["derive"] }
 console = "0.16.3"
 git2 = "0.21.0"
 jiff = "0.2.27"
+semver = "1.0.28"
 
 [dev-dependencies]
 git2 = "0.21.0"

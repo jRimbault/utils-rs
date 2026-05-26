@@ -11,7 +11,7 @@ use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use console::style;
 
@@ -80,15 +80,10 @@ fn main() -> Result<()> {
     let args = parse_args();
 
     let repo = open_repo(args.repo.as_deref())?;
-    let head = repo
-        .head()
-        .context("read HEAD")?
-        .peel_to_commit()
-        .context("peel HEAD to commit")?
-        .id();
+    let head = head_commit_id(&repo)?;
 
     let commits = git::path_commits(&repo, &args.path, head)?;
-    let tags = git::annotated_tags(&repo, &args.tag_glob)?;
+    let tags = git::annotated_tags(&repo, &args.tag_glob, head)?;
     let entries = core::merge(commits, tags, args.merge);
 
     let mut pager = Pager::spawn();
@@ -119,9 +114,21 @@ fn open_repo(explicit: Option<&std::path::Path>) -> Result<git2::Repository> {
         Some(p) => git2::Repository::open(p).with_context(|| format!("open repo at {p:?}")),
         None => {
             let cwd = std::env::current_dir().context("read current directory")?;
-            git2::Repository::discover(&cwd)
-                .with_context(|| format!("discover repo from {cwd:?}"))
+            git2::Repository::discover(&cwd).with_context(|| format!("discover repo from {cwd:?}"))
         }
+    }
+}
+
+fn head_commit_id(repo: &git2::Repository) -> Result<git2::Oid> {
+    match repo.head() {
+        Ok(head) => head
+            .peel_to_commit()
+            .context("peel HEAD to commit")
+            .map(|commit| commit.id()),
+        Err(err) if err.code() == git2::ErrorCode::UnbornBranch => {
+            bail!("repository has no commits yet; create an initial commit before running gitlot")
+        }
+        Err(err) => Err(err).context("read HEAD"),
     }
 }
 

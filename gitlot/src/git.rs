@@ -93,13 +93,11 @@ fn build_decoration_map(repo: &git2::Repository) -> Result<HashMap<git2::Oid, Ve
     Ok(map)
 }
 
-/// Annotated tags only — lightweight tags are silently skipped.
-/// Tag time is the tagger's signature time, falling back to the target
-/// commit's author time.
-pub fn annotated_tags(repo: &git2::Repository, glob: &str) -> Result<Vec<Tag>> {
-    let names = repo
-        .tag_names(Some(glob))
-        .context("list tag names")?;
+/// Annotated tags reachable from `head` only — lightweight tags are
+/// silently skipped. Tag time is the tagger's signature time, falling
+/// back to the target commit's author time.
+pub fn annotated_tags(repo: &git2::Repository, glob: &str, head: git2::Oid) -> Result<Vec<Tag>> {
+    let names = repo.tag_names(Some(glob)).context("list tag names")?;
 
     let mut out = Vec::new();
     for entry in &names {
@@ -119,6 +117,13 @@ pub fn annotated_tags(repo: &git2::Repository, glob: &str) -> Result<Vec<Tag>> {
             .peel(git2::ObjectType::Commit)
             .with_context(|| format!("peel commit for tag {name}"))?
             .id();
+        if target != head
+            && !repo
+                .graph_descendant_of(head, target)
+                .with_context(|| format!("check whether tag {name} is reachable from HEAD"))?
+        {
+            continue;
+        }
         let time = match tag.tagger() {
             Some(sig) => sig.when().seconds(),
             None => repo

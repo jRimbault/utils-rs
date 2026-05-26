@@ -3,6 +3,7 @@
 //! No I/O, no git2 calls past type re-exports — everything here is
 //! deterministic and trivially testable.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -66,9 +67,8 @@ pub fn merge(commits: Vec<Commit>, tags: Vec<Tag>, opts: MergeOpts) -> Vec<Entry
     // Descending by time. Tiebreaks:
     // - Separators sort before commits at equal time (they introduce the
     //   commits below them).
-    // - Two tags at the same time fall back to descending name order, so
-    //   semver-shaped names land in the natural newest-first order
-    //   (v1.1.1 above v1.1.0).
+    // - Two tags at the same time sort by descending semver when both
+    //   names parse as versions, then fall back to descending name order.
     // - Two commits at the same time fall back to ascending OID for
     //   deterministic test output.
     entries.sort_by(|a, b| {
@@ -77,7 +77,7 @@ pub fn merge(commits: Vec<Commit>, tags: Vec<Tag>, opts: MergeOpts) -> Vec<Entry
             .then_with(|| entry_kind_rank(a).cmp(&entry_kind_rank(b)))
             .then_with(|| match (a, b) {
                 (Entry::TagSeparator { name: n1, .. }, Entry::TagSeparator { name: n2, .. }) => {
-                    n2.cmp(n1)
+                    compare_tag_names(n1, n2)
                 }
                 (Entry::Commit(c1), Entry::Commit(c2)) => c1.id.cmp(&c2.id),
                 _ => std::cmp::Ordering::Equal,
@@ -104,6 +104,20 @@ pub fn merge(commits: Vec<Commit>, tags: Vec<Tag>, opts: MergeOpts) -> Vec<Entry
     } else {
         entries
     }
+}
+
+fn compare_tag_names(left: &str, right: &str) -> Ordering {
+    match (parse_semver(left), parse_semver(right)) {
+        (Some(v1), Some(v2)) => v2.cmp(&v1).then_with(|| right.cmp(left)),
+        _ => right.cmp(left),
+    }
+}
+
+fn parse_semver(name: &str) -> Option<semver::Version> {
+    semver::Version::parse(name).ok().or_else(|| {
+        name.strip_prefix('v')
+            .and_then(|rest| semver::Version::parse(rest).ok())
+    })
 }
 
 fn entry_time(e: &Entry) -> i64 {
@@ -216,10 +230,10 @@ mod tests {
     }
 
     #[test]
-    fn equal_time_tags_sort_descending_by_name() {
+    fn equal_time_tags_sort_by_semver() {
         let entries = merge(
             vec![],
-            vec![tag("v1.1.0", 9, 100), tag("v1.1.1", 9, 100)],
+            vec![tag("v1.9.0", 9, 100), tag("v1.10.0", 9, 100)],
             opts(false, None),
         );
         let names: Vec<_> = entries
@@ -229,7 +243,24 @@ mod tests {
                 _ => unreachable!(),
             })
             .collect();
-        assert_eq!(names, vec!["v1.1.1", "v1.1.0"]);
+        assert_eq!(names, vec!["v1.10.0", "v1.9.0"]);
+    }
+
+    #[test]
+    fn equal_time_non_semver_tags_fall_back_to_name() {
+        let entries = merge(
+            vec![],
+            vec![tag("release-a", 9, 100), tag("release-b", 9, 100)],
+            opts(false, None),
+        );
+        let names: Vec<_> = entries
+            .iter()
+            .map(|e| match e {
+                Entry::TagSeparator { name, .. } => name.as_str(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(names, vec!["release-b", "release-a"]);
     }
 
     #[test]
@@ -246,11 +277,7 @@ mod tests {
     #[test]
     fn limit_truncates_commits_only() {
         let entries = merge(
-            vec![
-                commit(1, 100, "a"),
-                commit(2, 80, "b"),
-                commit(3, 60, "c"),
-            ],
+            vec![commit(1, 100, "a"), commit(2, 80, "b"), commit(3, 60, "c")],
             vec![tag("v1", 9, 90)],
             opts(false, Some(2)),
         );
@@ -260,7 +287,11 @@ mod tests {
             .count();
         assert_eq!(commit_count, 2);
         // The separator at t=90 sits between the two kept commits.
-        assert!(entries.iter().any(|e| matches!(e, Entry::TagSeparator { .. })));
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, Entry::TagSeparator { .. }))
+        );
     }
 
     #[test]
