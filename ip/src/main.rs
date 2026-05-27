@@ -32,10 +32,7 @@ impl Ip {
             .body_mut()
             .read_to_string()
             .wrap_err("converting ipify response into an UTF-8 string")?;
-        let ip = response
-            .trim()
-            .parse()
-            .wrap_err("parsing response")?;
+        let ip = response.trim().parse().wrap_err("parsing response")?;
         Ok(ip)
     }
 }
