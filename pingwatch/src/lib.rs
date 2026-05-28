@@ -25,6 +25,7 @@
 
 pub mod cli;
 mod client;
+pub mod duration;
 mod event;
 mod notify;
 mod printer;

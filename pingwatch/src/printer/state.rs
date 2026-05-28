@@ -139,7 +139,10 @@ impl PrinterState {
         // was down, tell the user it recovered, then clear the streak so the
         // next outage is measured fresh.
         if self.notified_down[i] {
-            notify::host_recovered(self.hosts[i].as_str(), self.resolved_addrs[i]);
+            tokio::spawn(notify::host_recovered(
+                self.hosts[i].as_str().to_string(),
+                self.resolved_addrs[i],
+            ));
         }
         self.down_since[i] = None;
         self.notified_down[i] = false;
@@ -157,12 +160,13 @@ impl PrinterState {
         // is re-checked on every subsequent failure so the notification fires
         // once the host has been silent for at least `notify_after`.
         let started = *self.down_since[i].get_or_insert_with(Instant::now);
-        if !self.notified_down[i] && started.elapsed() >= self.notify_after {
-            notify::host_down(
-                self.hosts[i].as_str(),
+        let elapsed = started.elapsed();
+        if !self.notified_down[i] && elapsed >= self.notify_after {
+            tokio::spawn(notify::host_down(
+                self.hosts[i].as_str().to_string(),
                 self.resolved_addrs[i],
-                started.elapsed(),
-            );
+                elapsed,
+            ));
             self.notified_down[i] = true;
         }
 
