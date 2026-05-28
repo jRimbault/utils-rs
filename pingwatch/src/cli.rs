@@ -18,6 +18,9 @@ struct Config {
     interval: Option<u64>,
     /// Per-ping timeout in milliseconds.
     timeout: Option<u64>,
+    /// Silence threshold in milliseconds: a host that fails to respond for at
+    /// least this long triggers a desktop notification.
+    notify_after: Option<u64>,
     /// Spinner style preset name. Animated builds expose the full catalog;
     /// static builds accept only `staticDot`.
     spinner_style: Option<SpinnerStyle>,
@@ -39,6 +42,7 @@ struct Config {
 ///   hosts        = ["example.com", "8.8.8.8"]   # list of hostnames or IPs
 ///   interval     = 1000                         # milliseconds between pings
 ///   timeout      = 2000                         # per-ping timeout in milliseconds
+///   notify_after = 30000                        # silence before a desktop notification (ms)
 ///   spinner_style = "staticDot"                 # or any animated preset when the feature is enabled
 // The derive keeps the clap API intact (including `try_parse_from` used in
 // tests); the inherent `parse(bin_name)` method shadows it for production
@@ -57,6 +61,9 @@ pub struct Args {
     /// Per-ping timeout in milliseconds
     #[arg(short, long, default_value = "2000", value_parser = parse_millis)]
     pub timeout: Duration,
+    /// Notify via `notify-send` once a host has been silent this many milliseconds
+    #[arg(short = 'n', long, default_value = "30000", value_parser = parse_millis)]
+    pub notify_after: Duration,
     /// Spinner style preset from cli-spinners
     #[arg(long, value_enum, default_value = DEFAULT_SPINNER_STYLE_NAME)]
     pub spinner_style: SpinnerStyle,
@@ -118,6 +125,7 @@ impl Args {
 
         let interval = resolve_duration(&matches, "interval", config.interval, 1000)?;
         let timeout = resolve_duration(&matches, "timeout", config.timeout, 2000)?;
+        let notify_after = resolve_duration(&matches, "notify_after", config.notify_after, 30000)?;
         let spinner_style = resolve_spinner_style(
             &matches,
             "spinner_style",
@@ -129,6 +137,7 @@ impl Args {
             hosts,
             interval,
             timeout,
+            notify_after,
             spinner_style,
         })
     }

@@ -58,10 +58,21 @@ fn timing_params(#[case] argv: &[&str], #[case] interval_ms: u64, #[case] timeou
 #[case(&["pingwatch"])]
 #[case(&["pingwatch", "--interval", "0",   "host"])]
 #[case(&["pingwatch", "--timeout",  "0",   "host"])]
+#[case(&["pingwatch", "--notify-after", "0", "host"])]
 #[case(&["pingwatch", "--interval", "abc", "host"])]
 #[case(&["pingwatch", "--timeout",  "1s",  "host"])]
 fn invalid_args_rejected(#[case] argv: &[&str]) {
     assert!(parse_no_config(argv).is_err());
+}
+
+// notify-after: default, short, and long forms all parse to the right Duration.
+#[rstest]
+#[case(&["pingwatch", "host"],                            30000)]
+#[case(&["pingwatch", "--notify-after", "5000", "host"],   5000)]
+#[case(&["pingwatch", "-n",             "5000", "host"],   5000)]
+fn notify_after_param(#[case] argv: &[&str], #[case] expected_ms: u64) {
+    let args = parse_no_config(argv).unwrap();
+    assert_eq!(args.notify_after.as_millis() as u64, expected_ms);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,10 +162,29 @@ fn cli_timing_overrides_config(
     assert_eq!(args.timeout.as_millis() as u64, expected_timeout_ms);
 }
 
+// notify_after resolves from config when the flag is absent, and the CLI flag
+// wins when both are present.
+#[test]
+fn config_notify_after_used_when_flag_absent() {
+    let fixture = IntegrationFixture::with_config("notify_after = 5000\n");
+    let args = fixture.parse(["pingwatch", "host"]).unwrap();
+    assert_eq!(args.notify_after.as_millis() as u64, 5000);
+}
+
+#[test]
+fn cli_notify_after_overrides_config() {
+    let fixture = IntegrationFixture::with_config("notify_after = 5000\n");
+    let args = fixture
+        .parse(["pingwatch", "--notify-after", "10000", "host"])
+        .unwrap();
+    assert_eq!(args.notify_after.as_millis() as u64, 10000);
+}
+
 // Zero-value timing in the config file must be rejected.
 #[rstest]
 #[case("interval = 0\n")]
 #[case("timeout = 0\n")]
+#[case("notify_after = 0\n")]
 fn invalid_config_timing_rejected(#[case] config: &str) {
     let fixture = IntegrationFixture::with_config(config);
     assert!(fixture.parse(["pingwatch", "host"]).is_err());

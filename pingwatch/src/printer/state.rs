@@ -6,10 +6,14 @@
 //! construction to `super::render`. It does not know about the tokio event
 //! loop or channels.
 
-use std::{net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    net::IpAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use super::render;
-use crate::{event, spinner_style::SpinnerStyle, types};
+use crate::{event, notify, spinner_style::SpinnerStyle, types};
 
 const WAIT_TEMPLATE: &str = "{spinner:.yellow} {prefix} {msg}";
 const OK_TEMPLATE: &str = "{spinner:.green} {prefix} rtt={msg}";
@@ -26,11 +30,23 @@ pub(super) struct PrinterState {
     bar_is_ok: Vec<bool>,
     resolved_addrs: Vec<Option<IpAddr>>,
     resolved_width: usize,
+    /// How long a host must be silent before a desktop notification fires.
+    notify_after: Duration,
+    /// Start of the current consecutive-failure streak per host, or `None`
+    /// while the host is responding. Used to measure outage duration.
+    down_since: Vec<Option<Instant>>,
+    /// Whether a "host down" notification has already been sent for the
+    /// current outage, so we alert once per outage rather than every ping.
+    notified_down: Vec<bool>,
 }
 
 impl PrinterState {
     /// Build a `PrinterState` with one spinner per host in "resolving..." state.
-    pub(super) fn new(hosts: Arc<[types::Hostname]>, spinner_style: SpinnerStyle) -> Self {
+    pub(super) fn new(
+        hosts: Arc<[types::Hostname]>,
+        spinner_style: SpinnerStyle,
+        notify_after: Duration,
+    ) -> Self {
         let multi = indicatif::MultiProgress::new();
         let host_width = hosts.iter().map(|h| h.as_str().len()).max().unwrap_or(0);
         let style_ok = render::make_style(OK_TEMPLATE, spinner_style);
@@ -58,6 +74,9 @@ impl PrinterState {
             bar_is_ok: vec![false; n],
             resolved_addrs: vec![None; n],
             resolved_width: 0,
+            notify_after,
+            down_since: vec![None; n],
+            notified_down: vec![false; n],
         }
     }
 
@@ -116,6 +135,15 @@ impl PrinterState {
     }
 
     fn on_success(&mut self, i: usize, rtt: Duration) {
+        // A successful ping ends any outage. If we had alerted that the host
+        // was down, tell the user it recovered, then clear the streak so the
+        // next outage is measured fresh.
+        if self.notified_down[i] {
+            notify::host_recovered(self.hosts[i].as_str(), self.resolved_addrs[i]);
+        }
+        self.down_since[i] = None;
+        self.notified_down[i] = false;
+
         let ms = rtt.as_secs_f64() * 1000.0;
         if !self.bar_is_ok[i] {
             self.bars[i].set_style(self.style_ok.clone());
@@ -125,6 +153,19 @@ impl PrinterState {
     }
 
     fn on_failure(&mut self, i: usize, error: event::PingFailure) {
+        // Track outage duration: the streak starts at the first failure and
+        // is re-checked on every subsequent failure so the notification fires
+        // once the host has been silent for at least `notify_after`.
+        let started = *self.down_since[i].get_or_insert_with(Instant::now);
+        if !self.notified_down[i] && started.elapsed() >= self.notify_after {
+            notify::host_down(
+                self.hosts[i].as_str(),
+                self.resolved_addrs[i],
+                started.elapsed(),
+            );
+            self.notified_down[i] = true;
+        }
+
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let prefix = render::render_failure_prefix(
             &self.hosts[i],

@@ -26,6 +26,7 @@
 pub mod cli;
 mod client;
 mod event;
+mod notify;
 mod printer;
 pub mod spinner_style;
 pub mod types;
@@ -39,6 +40,7 @@ pub async fn run(args: cli::Args) -> anyhow::Result<()> {
     let interval = args.interval;
     let spinner_style = args.spinner_style;
     let timeout = args.timeout;
+    let notify_after = args.notify_after;
 
     // Bounded channel: workers back-pressure when the printer lags.
     // At <=10 hosts x 1 ping/s, 64 slots is several seconds of headroom.
@@ -46,7 +48,7 @@ pub async fn run(args: cli::Args) -> anyhow::Result<()> {
 
     let printer = tokio::spawn({
         let hosts = Arc::clone(&hosts);
-        async move { printer::run_printer(hosts, spinner_style, rx).await }
+        async move { printer::run_printer(hosts, spinner_style, notify_after, rx).await }
     });
 
     // One ICMP client per protocol version, shared across all workers.

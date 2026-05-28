@@ -6,7 +6,6 @@
 //! not know how state is represented or how strings are rendered.
 
 use std::sync::Arc;
-#[cfg(any(feature = "animated-spinners", test))]
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -25,9 +24,10 @@ use state::PrinterState;
 pub async fn run_printer(
     hosts: Arc<[types::Hostname]>,
     spinner_style: SpinnerStyle,
+    notify_after: Duration,
     mut rx: mpsc::Receiver<event::PingEvent>,
 ) {
-    let mut state = PrinterState::new(hosts, spinner_style);
+    let mut state = PrinterState::new(hosts, spinner_style, notify_after);
 
     #[cfg(feature = "animated-spinners")]
     {
@@ -78,7 +78,12 @@ mod tests {
         drop(tx);
         tokio::time::timeout(
             Duration::from_secs(1),
-            run_printer(make_hosts(&["h1"]), SpinnerStyle::default(), rx),
+            run_printer(
+                make_hosts(&["h1"]),
+                SpinnerStyle::default(),
+                Duration::from_secs(30),
+                rx,
+            ),
         )
         .await
         .expect("printer should exit immediately when the channel is already closed");
@@ -108,7 +113,12 @@ mod tests {
         drop(tx);
         tokio::time::timeout(
             Duration::from_secs(1),
-            run_printer(make_hosts(&["h1"]), SpinnerStyle::default(), rx),
+            run_printer(
+                make_hosts(&["h1"]),
+                SpinnerStyle::default(),
+                Duration::from_secs(30),
+                rx,
+            ),
         )
         .await
         .expect("printer should handle this event and exit");
@@ -126,7 +136,12 @@ mod tests {
         drop(tx);
         tokio::time::timeout(
             Duration::from_secs(1),
-            run_printer(make_hosts(&["h1"]), SpinnerStyle::default(), rx),
+            run_printer(
+                make_hosts(&["h1"]),
+                SpinnerStyle::default(),
+                Duration::from_secs(30),
+                rx,
+            ),
         )
         .await
         .expect("printer should skip out-of-range events without panicking");
@@ -153,6 +168,7 @@ mod tests {
             run_printer(
                 make_hosts(&["host-a", "host-b", "host-c"]),
                 SpinnerStyle::default(),
+                Duration::from_secs(30),
                 rx,
             ),
         )
