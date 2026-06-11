@@ -1,3 +1,6 @@
+# Local-only spinners (not present upstream), merged in by build.rs.
+extra = ["spinners-extra.json"]
+
 [upstream]
 owner = "sindresorhus"
 repo = "cli-spinners"

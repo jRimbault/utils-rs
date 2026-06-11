@@ -16,6 +16,8 @@ const ANIMATED_FEATURE_ENV: &str = "CARGO_FEATURE_ANIMATED_SPINNERS";
 #[derive(Deserialize)]
 struct SpinnerSourceConfig {
     upstream: UpstreamSource,
+    #[serde(default)]
+    extra: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -79,8 +81,27 @@ fn main() {
 
     let source = fs::read_to_string(local_source_path)
         .unwrap_or_else(|err| panic!("reading {LOCAL_SOURCE_PATH}: {err}"));
-    let spinners: IndexMap<String, SpinnerSpec> = serde_json::from_str(&source)
+    let mut spinners: IndexMap<String, SpinnerSpec> = serde_json::from_str(&source)
         .unwrap_or_else(|err| panic!("parsing {LOCAL_SOURCE_PATH}: {err}"));
+
+    for extra_path in &config.extra {
+        let path = Path::new("src").join(extra_path);
+        println!("cargo:rerun-if-changed={}", path.display());
+
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
+        let extra: IndexMap<String, SpinnerSpec> = serde_json::from_str(&source)
+            .unwrap_or_else(|err| panic!("parsing {}: {err}", path.display()));
+
+        for (name, spec) in extra {
+            if spinners.insert(name.clone(), spec).is_some() {
+                panic!(
+                    "spinner {name:?} from {} collides with an existing spinner name",
+                    path.display()
+                );
+            }
+        }
+    }
 
     let generated = generate_module(&config.upstream, &spinners);
     write_if_changed(&out_path, generated.as_bytes())

@@ -8,7 +8,7 @@ mod tests {
     #[test]
     fn exposes_all_upstream_spinner_names() {
         #[cfg(feature = "animated-spinners")]
-        assert_eq!(SpinnerStyle::value_variants().len(), 90);
+        assert_eq!(SpinnerStyle::value_variants().len(), 91);
 
         #[cfg(not(feature = "animated-spinners"))]
         assert_eq!(SpinnerStyle::value_variants().len(), 1);

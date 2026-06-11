@@ -1,0 +1,6 @@
+{
+  "snowflake": {
+    "interval": 120,
+    "frames": ["❄", "❅", "❆"]
+  }
+}
