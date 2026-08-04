@@ -43,9 +43,10 @@ pub async fn run(args: cli::Args) -> anyhow::Result<()> {
     let timeout = args.timeout;
     let notify_after = args.notify_after;
 
-    // Bounded channel: workers back-pressure when the printer lags.
-    // At <=10 hosts x 1 ping/s, 64 slots is several seconds of headroom.
-    let (tx, rx) = mpsc::channel::<event::PingEvent>(64);
+    // Bounded channel: workers back-pressure when the printer lags. Scale
+    // capacity with the host count so a large target list still gets a few
+    // seconds of headroom at roughly 1 ping/s per host.
+    let (tx, rx) = mpsc::channel::<event::PingEvent>((hosts.len() * 8).max(64));
 
     let printer = tokio::spawn({
         let hosts = Arc::clone(&hosts);

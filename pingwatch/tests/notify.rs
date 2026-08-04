@@ -4,9 +4,9 @@
 //! Instead of asserting against a real notification daemon, this shims
 //! `notify-send` with a script that appends its arguments to a log file, then
 //! points the spawned binary's `PATH` at the shim. Driving the actual binary
-//! (rather than calling `run` in-process) exercises the whole chain: CLI
-//! parsing, the worker ping loop, the printer's failure handling, and finally
-//! the subprocess spawn.
+//! (rather than calling `run` in-process) exercises the whole chain: config
+//! and CLI parsing, the worker ping loop, the printer's failure handling, and
+//! finally the subprocess spawn.
 //!
 //! Requires permission to open an ICMP socket (CAP_NET_RAW, or an unprivileged
 //! `net.ipv4.ping_group_range`). CI only runs `cargo check`, so this test is
@@ -44,7 +44,13 @@ fn sustained_failure_invokes_notify_send() {
     let log_path = workdir.path().join("notify.log");
     let stderr_path = workdir.path().join("pingwatch.stderr");
     fs::create_dir_all(&shim_dir).expect("create shim dir");
-    fs::create_dir_all(&config_home).expect("create config home");
+    let pingwatch_config_dir = config_home.join("pingwatch");
+    fs::create_dir_all(&pingwatch_config_dir).expect("create config home");
+    fs::write(
+        pingwatch_config_dir.join("config.toml"),
+        format!("hosts = [\"{UNREACHABLE_HOST}\"]\n"),
+    )
+    .expect("write pingwatch config");
     write_notify_shim(&shim_dir);
 
     // Prepend the shim directory so the spawned binary finds our fake
@@ -66,7 +72,6 @@ fn sustained_failure_invokes_notify_send() {
             "200",
             "--timeout",
             "200",
-            UNREACHABLE_HOST,
         ])
         .env("PATH", path)
         .env("XDG_CONFIG_HOME", &config_home)

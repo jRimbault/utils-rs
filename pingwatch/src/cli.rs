@@ -28,9 +28,10 @@ struct Config {
 
 /// Ping one or more hosts simultaneously, showing live status in a TUI.
 ///
-/// All arguments can be persisted in a TOML config file so they do not have
-/// to be repeated on every invocation. CLI arguments take precedence over
-/// config file values.
+/// Hosts are read exclusively from the TOML config file (there is no limit on
+/// how many may be listed). All other arguments can also be persisted there
+/// so they do not have to be repeated on every invocation; CLI arguments take
+/// precedence over config file values for those.
 ///
 /// Config file location (in order of precedence):
 ///
@@ -50,10 +51,8 @@ struct Config {
 #[derive(clap::Parser)]
 #[command(version, verbatim_doc_comment)]
 pub struct Args {
-    /// Hosts to ping (1-10 hostnames or IP addresses)
-    // `required` is omitted here so the config file can supply hosts;
-    // the constraint is re-enforced in `parse()` after merging.
-    #[arg(num_args = 0..=10)]
+    /// Hosts to ping, supplied only through the config file.
+    #[arg(skip)]
     pub hosts: Vec<Hostname>,
     /// Interval between pings in milliseconds
     #[arg(short, long, default_value = "1000", value_parser = parse_millis)]
@@ -99,28 +98,10 @@ impl Args {
                 anyhow::Error::from(e)
             })?;
 
-        // Hosts: CLI wins if any were provided, otherwise fall back to config.
-        let cli_hosts: Vec<Hostname> = matches
-            .get_many::<Hostname>("hosts")
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect();
-
-        let hosts = if !cli_hosts.is_empty() {
-            cli_hosts
-        } else {
-            config.hosts.unwrap_or_default()
-        };
-
+        let hosts = config.hosts.unwrap_or_default();
         anyhow::ensure!(
             !hosts.is_empty(),
-            "at least one host is required (provide on the CLI or in the config file)"
-        );
-        anyhow::ensure!(
-            hosts.len() <= 10,
-            "at most 10 hosts allowed, got {}",
-            hosts.len()
+            "at least one host is required (add a `hosts` entry to the config file)"
         );
 
         let interval = resolve_duration(&matches, "interval", config.interval, 1000)?;

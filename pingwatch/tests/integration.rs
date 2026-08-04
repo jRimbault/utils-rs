@@ -8,24 +8,17 @@ const NXDOMAIN_HOST: &str = "this.host.does.not.exist.invalid";
 const NXDOMAIN_HOST_2: &str = "this.host.also.does.not.exist.invalid";
 
 #[tokio::test(flavor = "current_thread")]
-async fn run_exits_when_cli_host_fails_resolution() {
-    let fixture = IntegrationFixture::new();
-    fixture.run(["pingwatch", NXDOMAIN_HOST]).await.unwrap();
-}
-
-#[tokio::test(flavor = "current_thread")]
 async fn run_exits_when_config_supplies_host() {
     let fixture = IntegrationFixture::with_config(&format!("hosts = [\"{NXDOMAIN_HOST}\"]\n"));
     fixture.run(["pingwatch"]).await.unwrap();
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn run_exits_when_multiple_hosts_fail_resolution() {
-    let fixture = IntegrationFixture::new();
-    fixture
-        .run(["pingwatch", NXDOMAIN_HOST, NXDOMAIN_HOST_2])
-        .await
-        .unwrap();
+async fn run_exits_when_multiple_config_hosts_fail_resolution() {
+    let fixture = IntegrationFixture::with_config(&format!(
+        "hosts = [\"{NXDOMAIN_HOST}\", \"{NXDOMAIN_HOST_2}\"]\n"
+    ));
+    fixture.run(["pingwatch"]).await.unwrap();
 }
 
 #[tokio::test(flavor = "current_thread")]
