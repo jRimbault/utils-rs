@@ -13,6 +13,8 @@ use std::time::Duration;
 /// TOML representation.
 #[derive(serde::Deserialize, Default)]
 struct Config {
+    /// Ping targets: hostnames, bare IP literals, or `{ name, ip }` tables
+    /// naming an IP address that has no DNS entry worth displaying.
     hosts: Option<Vec<Hostname>>,
     /// Interval between pings in milliseconds.
     interval: Option<u64>,
@@ -40,7 +42,11 @@ struct Config {
 ///
 /// Supported keys:
 ///
-///   hosts        = ["example.com", "8.8.8.8"]   # list of hostnames or IPs
+///   hosts = [
+///     "example.com",                            # hostname, resolved via DNS
+///     "8.8.8.8",                                 # bare IP literal
+///     { name = "router", ip = "192.168.1.1" },   # IP shown under a custom name
+///   ]
 ///   interval     = 1000                         # milliseconds between pings
 ///   timeout      = 2000                         # per-ping timeout in milliseconds
 ///   notify_after = 30000                        # silence before a desktop notification (ms)

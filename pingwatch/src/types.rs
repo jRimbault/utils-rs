@@ -2,21 +2,39 @@
 
 use std::{io, net::IpAddr, sync::Arc};
 
-/// A hostname or IP-address string, validated at the CLI boundary.
+/// A ping target: a bare hostname/IP-address string, or an IP address paired
+/// with a user-assigned display name (for addresses with no DNS entry worth
+/// showing).
 #[derive(Clone, Debug)]
-pub struct Hostname(Arc<str>);
+pub enum Hostname {
+    /// A domain name or IP-address literal, used as-is for both display and
+    /// resolution.
+    Plain(Arc<str>),
+    /// A pre-resolved IP address shown under a custom display name instead
+    /// of its literal address.
+    Named { name: Arc<str>, addr: IpAddr },
+}
 
 impl Hostname {
+    /// The label to show in the UI: the plain string, or the custom name.
     pub fn as_str(&self) -> &str {
-        self.0.as_ref()
+        match self {
+            Self::Plain(s) => s,
+            Self::Named { name, .. } => name,
+        }
     }
 
-    /// Resolves this hostname or IP-address string to its first `IpAddr`.
+    /// Resolves this target to its `IpAddr`.
     ///
-    /// Tries a direct parse first (handles bare IP literals without a DNS
-    /// round-trip), then falls back to `tokio::net::lookup_host`.
+    /// A [`Self::Named`] address is already known and returned directly. A
+    /// [`Self::Plain`] value tries a direct parse first (handles bare IP
+    /// literals without a DNS round-trip), then falls back to
+    /// `tokio::net::lookup_host`.
     pub async fn resolve(&self) -> Result<IpAddr, ResolveError> {
-        let host = self.0.as_ref();
+        let host = match self {
+            Self::Named { addr, .. } => return Ok(*addr),
+            Self::Plain(s) => s.as_ref(),
+        };
         if let Ok(ip) = host.parse::<IpAddr>() {
             return Ok(ip);
         }
@@ -50,8 +68,18 @@ impl std::error::Error for ResolveError {}
 
 impl std::fmt::Display for Hostname {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        f.write_str(self.as_str())
     }
+}
+
+/// Config-file shape for a single `hosts` entry: either a bare string
+/// (hostname or IP literal) or a table naming an IP address, e.g.
+/// `{ name = "router", ip = "192.168.1.1" }`.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum HostnameConfig {
+    Plain(String),
+    Named { name: String, ip: String },
 }
 
 impl<'de> serde::Deserialize<'de> for Hostname {
@@ -59,15 +87,25 @@ impl<'de> serde::Deserialize<'de> for Hostname {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = <String as serde::Deserialize>::deserialize(deserializer)?;
-        Ok(Self(Arc::from(value)))
+        match HostnameConfig::deserialize(deserializer)? {
+            HostnameConfig::Plain(value) => Ok(Self::Plain(Arc::from(value))),
+            HostnameConfig::Named { name, ip } => {
+                let addr = ip
+                    .parse::<IpAddr>()
+                    .map_err(|e| serde::de::Error::custom(format!("invalid `ip` {ip:?}: {e}")))?;
+                Ok(Self::Named {
+                    name: Arc::from(name),
+                    addr,
+                })
+            }
+        }
     }
 }
 
 impl std::str::FromStr for Hostname {
     type Err = std::convert::Infallible;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Hostname(Arc::from(s)))
+        Ok(Hostname::Plain(Arc::from(s)))
     }
 }
 
@@ -102,5 +140,36 @@ mod tests {
             host.as_str().as_ptr(),
             clone.as_str().as_ptr()
         ));
+    }
+
+    #[tokio::test]
+    async fn named_host_resolves_to_its_fixed_addr_and_displays_its_name() {
+        let addr: IpAddr = "192.168.1.1".parse().unwrap();
+        let host = Hostname::Named {
+            name: Arc::from("router"),
+            addr,
+        };
+
+        assert_eq!(host.as_str(), "router");
+        assert_eq!(host.resolve().await.unwrap(), addr);
+    }
+
+    #[test]
+    fn named_host_deserializes_from_toml_table() {
+        let host: Hostname =
+            toml_edit::de::from_str("h = { name = \"router\", ip = \"192.168.1.1\" }")
+                .map(|v: std::collections::HashMap<String, Hostname>| {
+                    v.into_iter().next().unwrap().1
+                })
+                .unwrap();
+
+        assert_eq!(host.as_str(), "router");
+    }
+
+    #[test]
+    fn named_host_rejects_invalid_ip() {
+        let result: Result<std::collections::HashMap<String, Hostname>, _> =
+            toml_edit::de::from_str("h = { name = \"router\", ip = \"not-an-ip\" }");
+        assert!(result.is_err());
     }
 }

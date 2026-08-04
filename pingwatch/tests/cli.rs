@@ -129,6 +129,23 @@ fn config_hosts_used() {
     assert_eq!(args.hosts[0].as_str(), "example.com");
 }
 
+#[test]
+fn config_hosts_accept_heterogeneous_entries() {
+    let fixture = IntegrationFixture::with_config(
+        "hosts = [\"example.com\", \"8.8.8.8\", { name = \"router\", ip = \"192.168.1.1\" }]\n",
+    );
+    let args = fixture.parse(["pingwatch"]).unwrap();
+    let labels: Vec<&str> = args.hosts.iter().map(|h| h.as_str()).collect();
+    assert_eq!(labels, ["example.com", "8.8.8.8", "router"]);
+}
+
+#[test]
+fn config_named_host_with_invalid_ip_rejected() {
+    let fixture =
+        IntegrationFixture::with_config("hosts = [{ name = \"router\", ip = \"not-an-ip\" }]\n");
+    assert!(fixture.parse(["pingwatch"]).is_err());
+}
+
 // ---------------------------------------------------------------------------
 // Config file — timing resolution
 // ---------------------------------------------------------------------------
