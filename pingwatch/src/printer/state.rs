@@ -35,6 +35,8 @@ pub(super) struct PrinterState {
     /// Start of the current consecutive-failure streak per host, or `None`
     /// while the host is responding. Used to measure outage duration.
     down_since: Vec<Option<Instant>>,
+    /// Wall-clock start of the current outage per host, for display purposes.
+    down_since_wall: Vec<Option<chrono::DateTime<chrono::Local>>>,
     /// Whether a "host down" notification has already been sent for the
     /// current outage, so we alert once per outage rather than every ping.
     notified_down: Vec<bool>,
@@ -76,6 +78,7 @@ impl PrinterState {
             resolved_width: 0,
             notify_after,
             down_since: vec![None; n],
+            down_since_wall: vec![None; n],
             notified_down: vec![false; n],
         }
     }
@@ -145,6 +148,7 @@ impl PrinterState {
             ));
         }
         self.down_since[i] = None;
+        self.down_since_wall[i] = None;
         self.notified_down[i] = false;
 
         let ms = rtt.as_secs_f64() * 1000.0;
@@ -160,6 +164,7 @@ impl PrinterState {
         // is re-checked on every subsequent failure so the notification fires
         // once the host has been silent for at least `notify_after`.
         let started = *self.down_since[i].get_or_insert_with(Instant::now);
+        let started_wall = *self.down_since_wall[i].get_or_insert_with(chrono::Local::now);
         let elapsed = started.elapsed();
         if !self.notified_down[i] && elapsed >= self.notify_after {
             tokio::spawn(notify::host_down(
@@ -187,6 +192,10 @@ impl PrinterState {
             self.bars[i].set_style(self.style_wait.clone());
             self.bar_is_ok[i] = false;
         }
-        self.bars[i].set_message("waiting");
+        self.bars[i].set_message(format!(
+            "down since {} ({})",
+            started_wall.format("%H:%M:%S"),
+            crate::duration::HumanDuration(elapsed)
+        ));
     }
 }
