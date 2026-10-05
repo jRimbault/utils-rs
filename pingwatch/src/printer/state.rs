@@ -194,8 +194,51 @@ impl PrinterState {
         }
         self.bars[i].set_message(format!(
             "down since {} ({})",
-            started_wall.format("%H:%M:%S"),
+            format_outage_start(started_wall, chrono::Local::now()),
             crate::duration::HumanDuration(elapsed)
         ));
+    }
+}
+
+/// Format an outage start time relative to `now`: time only when the outage
+/// began today, otherwise prefixed with the date so long outages stay
+/// unambiguous.
+fn format_outage_start(
+    started: chrono::DateTime<chrono::Local>,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
+    if started.date_naive() == now.date_naive() {
+        started.format("%H:%M:%S").to_string()
+    } else {
+        started.format("%Y-%m-%d %H:%M:%S").to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::format_outage_start;
+
+    #[test]
+    fn same_day_shows_time_only() {
+        let started = chrono::Local
+            .with_ymd_and_hms(2026, 10, 5, 0, 14, 21)
+            .unwrap();
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 10, 5, 8, 0, 0)
+            .unwrap();
+        assert_eq!(format_outage_start(started, now), "00:14:21");
+    }
+
+    #[test]
+    fn earlier_day_shows_date() {
+        let started = chrono::Local
+            .with_ymd_and_hms(2026, 10, 3, 0, 14, 21)
+            .unwrap();
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 10, 5, 8, 0, 0)
+            .unwrap();
+        assert_eq!(format_outage_start(started, now), "2026-10-03 00:14:21");
     }
 }
