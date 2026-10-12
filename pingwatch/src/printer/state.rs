@@ -15,7 +15,7 @@ use std::{
 use super::render;
 use crate::{event, notify, spinner_style::SpinnerStyle, types};
 
-const WAIT_TEMPLATE: &str = "{spinner:.yellow} {prefix} {msg}";
+const WAIT_TEMPLATE: &str = "{spinner:.red} {prefix} {msg}";
 const OK_TEMPLATE: &str = "{spinner:.green} {prefix} rtt={msg}";
 
 /// Aggregates the indicatif bars and the derived state needed to keep their
