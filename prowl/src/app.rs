@@ -40,13 +40,18 @@ impl History {
         self.values.iter().copied()
     }
 
-    // Provided as part of the bounded-buffer API; not currently called by renderers.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "part of the bounded-buffer API; no renderer calls it"
+    )]
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "pairs with `len` as part of the bounded-buffer API"
+    )]
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
@@ -109,8 +114,10 @@ impl App {
         self.selected
     }
 
-    // Provided as part of the display-preferences API; may be used by future renderers.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "part of the display-preferences API; no renderer calls it"
+    )]
     pub fn show_threads(&self) -> bool {
         self.show_threads
     }

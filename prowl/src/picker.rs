@@ -151,10 +151,10 @@ pub fn pick() -> anyhow::Result<Option<process::Pid>> {
                     KeyCode::Up | KeyCode::Char('k') => {
                         selected = selected.saturating_sub(1);
                     }
+                    // No guard on this arm: a failed guard would let 'j' fall
+                    // through to query editing when the list is empty.
                     KeyCode::Down | KeyCode::Char('j') => {
-                        if !matches.is_empty() {
-                            selected = (selected + 1).min(matches.len() - 1);
-                        }
+                        selected = (selected + 1).min(matches.len().saturating_sub(1));
                     }
 
                     // --- Query editing ---

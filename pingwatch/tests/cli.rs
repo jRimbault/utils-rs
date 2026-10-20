@@ -1,3 +1,9 @@
+// Each test binary compiles its own copy of `support`; this one never runs
+// the full ping loop, so `IntegrationFixture::run` is unused here.
+#[expect(
+    dead_code,
+    reason = "IntegrationFixture::run is only used by integration tests"
+)]
 mod support;
 
 use pingwatch::cli::Args;

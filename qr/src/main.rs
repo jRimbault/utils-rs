@@ -40,7 +40,7 @@ where
             .file_name()
             .and_then(|n| n.to_str())
             .context("file name should be utf8")?;
-        let file = File::open(&file)?;
+        let file = File::open(file)?;
         let sender = sender.clone();
         scope.spawn(move || {
             let encoder = QrFileEncoder::new(file, name);

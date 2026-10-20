@@ -69,7 +69,7 @@ fn word_count_file(sender: &mut Sender<String>, args: &Args, path: &Path) -> Res
             word.to_owned()
         }
     };
-    let file = File::open(&path).with_context(|| format!("opening `{}`", path.display()))?;
+    let file = File::open(path).with_context(|| format!("opening `{}`", path.display()))?;
     let file = BufReader::new(file);
     for line in file.lines() {
         let line = line.with_context(|| format!("reading from file `{}`", path.display()))?;

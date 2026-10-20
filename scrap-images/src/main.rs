@@ -68,7 +68,7 @@ async fn download_image(out_dir: Arc<PathBuf>, url: reqwest::Url) -> anyhow::Res
         .await?
         .bytes_stream()
         .map(to_io_error);
-    let file = url.path_segments().unwrap().last().unwrap();
+    let file = url.path_segments().unwrap().next_back().unwrap();
     let decoded = urlencoding::decode(file)?;
     let file = out_dir.join(decoded.as_ref());
     let mut writer = tokio::fs::File::create(&file).await?;
@@ -105,6 +105,6 @@ where
 {
     match result {
         Ok(value) => Ok(value),
-        Err(error) => Err(io::Error::new(io::ErrorKind::Other, error)),
+        Err(error) => Err(io::Error::other(error)),
     }
 }

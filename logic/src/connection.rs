@@ -43,7 +43,7 @@ impl FromStr for LogicGate {
                 Ok(value) => LogicGate::Assignment(Assignment::Direct(value)),
                 _ => LogicGate::Assignment(Assignment::Gate(part0.to_string())),
             },
-            (Some(part0), Some(part1), None) if part0 == "NOT" => LogicGate::Not(part1.to_owned()),
+            (Some("NOT"), Some(part1), None) => LogicGate::Not(part1.to_owned()),
             (Some(part0), Some(part1), Some(part2)) => {
                 let (origin, gate, dest) = (part0, part1, part2);
                 let origin = origin.to_owned();

@@ -71,7 +71,6 @@ impl IntegrationFixture {
         Args::parse_from(BIN_NAME, argv)
     }
 
-    #[allow(dead_code)]
     pub async fn run<I, T>(&self, argv: I) -> anyhow::Result<()>
     where
         I: IntoIterator<Item = T>,

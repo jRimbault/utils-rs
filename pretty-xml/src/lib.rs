@@ -83,5 +83,5 @@ fn to_io<E>(e: E) -> io::Error
 where
     E: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    io::Error::new(io::ErrorKind::Other, e)
+    io::Error::other(e)
 }

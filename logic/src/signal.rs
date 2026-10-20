@@ -41,12 +41,12 @@ pub trait Signal {
 
 impl Signal for Circuit {
     fn signal(&self, cable: &str) -> Option<u16> {
-        Circuit::signal(&self, cable)
+        Circuit::signal(self, cable)
     }
 }
 
 impl Signal for CachedCircuit {
     fn signal(&self, cable: &str) -> Option<u16> {
-        CachedCircuit::signal(&self, cable)
+        CachedCircuit::signal(self, cable)
     }
 }

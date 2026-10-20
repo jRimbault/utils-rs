@@ -1,3 +1,9 @@
+// Each test binary compiles its own copy of `support`; these tests always
+// supply a config, so `IntegrationFixture::new` is unused here.
+#[expect(
+    dead_code,
+    reason = "IntegrationFixture::new is only used by CLI tests"
+)]
 mod support;
 
 use std::time::Duration;

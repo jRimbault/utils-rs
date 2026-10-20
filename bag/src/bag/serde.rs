@@ -44,7 +44,7 @@ where
             {
                 let mut map = indexmap::IndexMap::new();
                 while let Some((key, value)) = seq.next_entry()? {
-                    if let Some(_) = map.insert(key, value) {
+                    if map.insert(key, value).is_some() {
                         return Err(serde::de::Error::duplicate_field("key"));
                     }
                 }
