@@ -247,3 +247,89 @@ fn invalid_config_spinner_style_rejected() {
         IntegrationFixture::with_config("hosts = [\"host\"]\nspinner_style = \"not-a-style\"\n");
     assert!(fixture.parse(["pingwatch"]).is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Config file — explicit `--config` path
+// ---------------------------------------------------------------------------
+
+/// Write `content` to a config file outside the fixture's XDG config home, so
+/// a test can tell which of the two files was read.
+fn custom_config(content: &str) -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().expect("temp config file");
+    std::fs::write(file.path(), content).expect("write custom config");
+    file
+}
+
+// The explicit file replaces the XDG one entirely, for both long and short forms.
+#[rstest]
+#[case("--config")]
+#[case("-c")]
+fn explicit_config_replaces_xdg_config(#[case] flag: &str) {
+    let fixture = IntegrationFixture::with_config("hosts = [\"xdg-host\"]\ninterval = 500\n");
+    let custom = custom_config("hosts = [\"custom-host\"]\n");
+    let args = fixture
+        .parse([
+            "pingwatch",
+            flag,
+            custom.path().to_str().expect("utf-8 temp path"),
+        ])
+        .unwrap();
+    let labels: Vec<&str> = args.hosts.iter().map(|h| h.as_str()).collect();
+    assert_eq!(labels, ["custom-host"]);
+    // interval came only from the XDG file, so it must not leak through.
+    assert_eq!(args.interval.as_millis() as u64, 1000);
+    assert_eq!(args.config.as_deref(), Some(custom.path()));
+}
+
+// Works without any XDG config present.
+#[test]
+fn explicit_config_used_without_xdg_config() {
+    let fixture = IntegrationFixture::new();
+    let custom = custom_config("hosts = [\"custom-host\"]\ntimeout = 750\n");
+    let args = fixture
+        .parse(["pingwatch", "--config", custom.path().to_str().unwrap()])
+        .unwrap();
+    assert_eq!(args.hosts[0].as_str(), "custom-host");
+    assert_eq!(args.timeout.as_millis() as u64, 750);
+}
+
+// CLI flags keep precedence over values from an explicit config file.
+#[test]
+fn cli_flags_override_explicit_config() {
+    let fixture = IntegrationFixture::new();
+    let custom = custom_config("hosts = [\"host\"]\ninterval = 500\n");
+    let args = fixture
+        .parse([
+            "pingwatch",
+            "--interval",
+            "200",
+            "--config",
+            custom.path().to_str().unwrap(),
+        ])
+        .unwrap();
+    assert_eq!(args.interval.as_millis() as u64, 200);
+}
+
+// A missing explicit file is an error naming the path, even when a valid XDG
+// config exists to fall back on.
+#[test]
+fn missing_explicit_config_rejected() {
+    let fixture = IntegrationFixture::with_config("hosts = [\"xdg-host\"]\n");
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("nope.toml");
+    let err = fixture
+        .parse(["pingwatch", "--config", missing.to_str().unwrap()])
+        .err()
+        .expect("missing --config file should be rejected");
+    assert!(
+        format!("{err:#}").contains("nope.toml"),
+        "error should name the file: {err:#}"
+    );
+}
+
+// Without the flag, the resolved record carries no explicit path.
+#[test]
+fn config_path_absent_by_default() {
+    let args = with_one_host().parse(["pingwatch"]).unwrap();
+    assert!(args.config.is_none());
+}

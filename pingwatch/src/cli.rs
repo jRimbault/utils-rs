@@ -3,12 +3,16 @@ use crate::{
     types::Hostname,
 };
 use anyhow::Context as _;
-use std::time::Duration;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 /// Config file schema — all fields optional; CLI takes precedence.
 ///
-/// Located at `$XDG_CONFIG_HOME/<bin>/config.toml`,
-/// falling back to `~/.config/<bin>/config.toml`.
+/// Read from `--config PATH` when given, otherwise from
+/// `$XDG_CONFIG_HOME/<bin>/config.toml`, falling back to
+/// `~/.config/<bin>/config.toml`.
 /// Timing fields are plain millisecond integers; `Duration` has no native
 /// TOML representation.
 #[derive(serde::Deserialize, Default)]
@@ -37,6 +41,7 @@ struct Config {
 ///
 /// Config file location (in order of precedence):
 ///
+///   --config PATH                       # must exist when given
 ///   $XDG_CONFIG_HOME/pingwatch/config.toml
 ///   ~/.config/pingwatch/config.toml
 ///
@@ -60,6 +65,9 @@ pub struct Args {
     /// Hosts to ping, supplied only through the config file.
     #[arg(skip)]
     pub hosts: Vec<Hostname>,
+    /// Read configuration from this file instead of the XDG config location
+    #[arg(short, long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
     /// Interval between pings in milliseconds
     #[arg(short, long, default_value = "1000", value_parser = parse_millis)]
     pub interval: Duration,
@@ -91,8 +99,6 @@ impl Args {
         I: IntoIterator<Item = T>,
         T: Into<std::ffi::OsString> + Clone,
     {
-        let config = load_config(bin_name)?;
-
         let matches = <Self as clap::CommandFactory>::command()
             .try_get_matches_from(argv)
             .map_err(|e| {
@@ -103,6 +109,10 @@ impl Args {
                 }
                 anyhow::Error::from(e)
             })?;
+
+        // argv is parsed first because it may name the config file to load.
+        let config_path = matches.get_one::<PathBuf>("config").cloned();
+        let config = load_config(bin_name, config_path.as_deref())?;
 
         let hosts = config.hosts.unwrap_or_default();
         anyhow::ensure!(
@@ -122,6 +132,7 @@ impl Args {
 
         Ok(Args {
             hosts,
+            config: config_path,
             interval,
             timeout,
             notify_after,
@@ -179,13 +190,21 @@ fn resolve_spinner_style(
 
 /// Load and deserialize the TOML config file.
 ///
-/// Returns `Ok(Config::default())` when the file does not exist so callers
-/// can treat absence as "no overrides" without special-casing.
-fn load_config(bin_name: &str) -> anyhow::Result<Config> {
-    let path = xdg_config_dir().join(bin_name).join("config.toml");
-    if !path.exists() {
-        return Ok(Config::default());
-    }
+/// `explicit` is the `--config` path. It must exist: silently falling back to
+/// defaults on a mistyped path would run with settings the user did not ask
+/// for. Without it, the XDG location is used and a missing file yields
+/// `Config::default()`, so callers treat absence as "no overrides".
+fn load_config(bin_name: &str, explicit: Option<&Path>) -> anyhow::Result<Config> {
+    let path = match explicit {
+        Some(path) => path.to_path_buf(),
+        None => {
+            let path = xdg_config_dir().join(bin_name).join("config.toml");
+            if !path.exists() {
+                return Ok(Config::default());
+            }
+            path
+        }
+    };
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("reading config file {}", path.display()))?;
     toml_edit::de::from_str(&content)
@@ -196,14 +215,14 @@ fn load_config(bin_name: &str) -> anyhow::Result<Config> {
 ///
 /// Respects `$XDG_CONFIG_HOME` when it is set to an absolute path;
 /// falls back to `$HOME/.config` per the XDG Base Directory Specification.
-fn xdg_config_dir() -> std::path::PathBuf {
-    if let Some(dir) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from)
+fn xdg_config_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
         && dir.is_absolute()
     {
         return dir;
     }
     let home = std::env::var_os("HOME").unwrap_or_default();
-    std::path::PathBuf::from(home).join(".config")
+    PathBuf::from(home).join(".config")
 }
 
 fn parse_millis(s: &str) -> Result<Duration, String> {
