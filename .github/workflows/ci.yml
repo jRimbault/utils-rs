@@ -27,3 +27,18 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    # Longer than `check`: lints every target, twice (default and all features).
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # Both feature sets: pingwatch's `animated-spinners` switches code and
+      # tests in and out, so each needs linting.
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
