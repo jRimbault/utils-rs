@@ -53,12 +53,13 @@ pub async fn run(args: cli::Args) -> anyhow::Result<()> {
         async move { printer::run_printer(hosts, spinner_style, notify_after, rx).await }
     });
 
-    // One ICMP client per protocol version, shared across all workers.
-    // Each Client opens a single raw socket; sharing avoids N duplicate sockets.
+    // Opening the sockets up front fails fast with a permission hint before
+    // any worker starts. See PingClients for when workers share a socket.
     let clients = client::PingClients::new()?;
 
     // Derive a unique ICMP echo identifier per host from the process ID so
-    // concurrent pingers don't respond to each other's replies.
+    // concurrent pingers don't respond to each other's replies. Linux ping
+    // sockets ignore it and use a kernel-assigned identifier instead.
     let base_id = std::process::id() as u16;
 
     let tasks: Vec<_> = hosts

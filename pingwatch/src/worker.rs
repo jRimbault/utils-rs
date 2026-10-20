@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 
 use crate::{client, event, types};
 
-/// Per-worker configuration: host identity, timing, and shared ICMP clients.
+/// Per-worker configuration: host identity, timing, and ICMP clients.
 pub struct WorkerConfig {
     pub host: types::Hostname,
     pub idx: types::HostIdx,
@@ -37,6 +37,8 @@ pub async fn run_worker(cfg: WorkerConfig, tx: mpsc::Sender<event::PingEvent>) {
         }
     };
 
+    // Keep `client` alive for the whole loop: dropping the last handle to a
+    // surge_ping::Client stops its receive task and fails pending pings.
     let client = cfg.clients.for_addr(addr);
     let mut pinger = client.pinger(addr, cfg.id).await;
     pinger.timeout(cfg.timeout);
@@ -135,6 +137,40 @@ mod tests {
             ),
             "expected Success or Failure, got {second:?}"
         );
+    }
+
+    // Two configured names resolving to the same address must not collide. On
+    // Linux ping sockets the kernel overwrites the echo identifier, so replies
+    // are matched by (address, seq) only; workers sharing one socket would both
+    // register seq 0 for 127.0.0.1 and one would fail with IdenticalRequests.
+    #[tokio::test]
+    async fn workers_pinging_same_address_do_not_collide() {
+        let clients = client::PingClients::new().unwrap();
+        let (tx, mut rx) = mpsc::channel(64);
+        for i in 0..2 {
+            let cfg = WorkerConfig {
+                idx: types::HostIdx::new(i),
+                id: surge_ping::PingIdentifier(42 + i as u16),
+                clients: clients.clone(),
+                ..worker_cfg("127.0.0.1")
+            };
+            tokio::spawn(run_worker(cfg, tx.clone()));
+        }
+        drop(tx);
+
+        // Collect a few rounds of results and require every ping to succeed.
+        let mut successes = [0usize; 2];
+        while successes.iter().any(|&n| n < 3) {
+            let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .expect("timed out waiting for ping results")
+                .expect("workers exited early");
+            match msg {
+                event::PingEvent::Resolved { .. } => {}
+                event::PingEvent::Success { idx, .. } => successes[idx.as_usize()] += 1,
+                other => panic!("expected only successful pings, got {other:?}"),
+            }
+        }
     }
 
     // Backpressure / cancellation: when the receiver is dropped the worker must
